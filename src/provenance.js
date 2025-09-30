@@ -14,7 +14,7 @@ let lineMappings = null;
 
 /**
  * Initializes the line number mappings from the pre-processed data.
- * 
+ *
  * This function expects the line mappings to be already converted from node mappings
  * to line number mappings by the Rust backend. The mappings should contain:
  * - preToPost: {sourceLineNum: [targetLineNums]}
@@ -23,7 +23,7 @@ let lineMappings = null;
  * - postToPyCode: {sourceLineNum: [targetLineNums]}
  * - cppCodeToPost: {sourceLineNum: [targetLineNums]}
  * - postToCppCode: {sourceLineNum: [targetLineNums]}
- * 
+ *
  * These mappings enable the UI to highlight corresponding lines
  * across different views when a user clicks on a line.
  */
@@ -33,7 +33,7 @@ function initializeLineMappings() {
         const lineMappingsElement = document.getElementById('lineMappings');
         if (lineMappingsElement) {
             lineMappings = JSON.parse(lineMappingsElement.textContent);
-            
+
             // Update global variables with the line mappings
             preToPost = lineMappings.preToPost || {};
             postToPre = lineMappings.postToPre || {};
@@ -41,7 +41,7 @@ function initializeLineMappings() {
             postToPyCode = lineMappings.postToPyCode || {};
             cppCodeToPost = lineMappings.cppCodeToPost || {};
             postToCppCode = lineMappings.postToCppCode || {};
-            
+
             console.log('Line mappings initialized:', {
                 preToPost,
                 postToPre,
@@ -62,25 +62,25 @@ function initializeLineMappings() {
 // Setup editor content
 function setupEditorContent(editorId, lines) {
     if (!lines) return;
-    
+
     const editor = document.getElementById(editorId);
     if (!editor) return;
 
     editor.innerHTML = '';  // Clear existing content
-    
+
     lines.forEach((line, index) => {
         const lineDiv = document.createElement('div');
         lineDiv.className = 'line';
-        
+
         // Create text nodes instead of using innerHTML
         const lineNumber = document.createElement('span');
         lineNumber.className = 'line-number';
         lineNumber.textContent = index + 1;
-        
+
         const lineContent = document.createElement('span');
         lineContent.className = 'line-content';
         lineContent.textContent = line;
-        
+
         // Check if this line has any matches
         const lineNum = index + 1;
         let hasMatch = false;
@@ -94,32 +94,41 @@ function setupEditorContent(editorId, lines) {
                           (postToCppCode[lineNum] && postToCppCode[lineNum].length > 0);
                 break;
             case 'generatedCode':
-                hasMatch = (pyCodeToPost[lineNum] && pyCodeToPost[lineNum].length > 0) || 
+                hasMatch = (pyCodeToPost[lineNum] && pyCodeToPost[lineNum].length > 0) ||
                 (cppCodeToPost[lineNum] && cppCodeToPost[lineNum].length > 0);
                 break;
         }
-        
+
         if (hasMatch) {
             lineContent.classList.add('has-match');
         }
-        
+
         lineDiv.appendChild(lineNumber);
         lineDiv.appendChild(lineContent);
-        
+
         // Add both click and hover handlers
         lineDiv.addEventListener('click', () => handleLineClick(editorId, index + 1));
         lineDiv.addEventListener('mouseenter', () => handleLineHover(editorId, index + 1));
         lineDiv.addEventListener('mouseleave', clearHighlights);
-        
+
         editor.appendChild(lineDiv);
     });
 }
 
+function hasSelectedLines() {
+    const selectedLines = document.querySelectorAll('.selected');
+    return selectedLines && selectedLines.length > 0;
+}
+
 // Handle line hover
 function handleLineHover(editorId, lineNumber) {
+    if (hasSelectedLines()) {
+        return; // Don't highlight if there are selected lines
+    }
+
     // Clear previous highlights
     clearHighlights();
-    
+
     // Add highlight to hovered line
     const hoveredLine = document.querySelector(`#${editorId} .line:nth-child(${lineNumber})`);
     if (hoveredLine) {
@@ -128,7 +137,7 @@ function handleLineHover(editorId, lineNumber) {
     }
 
     // Highlight and scroll corresponding lines
-    highlightCorrespondingLines(editorId, lineNumber);
+    UpdateCorrespondingLines(editorId, lineNumber, 'highlight');
 }
 
 // Clear all highlights
@@ -138,14 +147,23 @@ function clearHighlights() {
     });
 }
 
-// Update handleLineClick to use the same pattern
+// Clear all selected
+function clearSelectedLines() {
+    document.querySelectorAll('.line').forEach(line => {
+        line.classList.remove('selected');
+    });
+}
+
 function handleLineClick(editorId, lineNumber) {
-    clearHighlights();
-    
-    // Add highlight to clicked line
     const clickedLine = document.querySelector(`#${editorId} .line:nth-child(${lineNumber})`);
+
+    if (clickedLine && clickedLine.classList.contains('selected')) {
+        clearSelectedLines();
+        return;
+    }
+
     if (clickedLine) {
-        clickedLine.classList.add('highlight');
+        clickedLine.classList.add('selected');
         clickedLine.scrollIntoView({
             behavior: 'smooth',
             block: 'center',
@@ -153,8 +171,8 @@ function handleLineClick(editorId, lineNumber) {
         });
     }
 
-    // Highlight corresponding lines
-    highlightCorrespondingLines(editorId, lineNumber);
+    // Select corresponding lines
+    UpdateCorrespondingLines(editorId, lineNumber, 'selected');
 }
 
 // Initialize data from pre-embedded content
@@ -209,25 +227,25 @@ function initializeData() {
 // Call initialization when the page loads
 window.addEventListener('DOMContentLoaded', initializeData);
 
-// Highlight corresponding lines
-function highlightCorrespondingLines(sourceEditorId, lineNumber) {
+// Update corresponding lines to either highlight or selected state
+function UpdateCorrespondingLines(sourceEditorId, lineNumber, newState) {
     let correspondingLines = findCorrespondingLines(sourceEditorId, lineNumber);
-    
+
     Object.entries(correspondingLines).forEach(([editorId, lines]) => {
         // Skip scrolling if this is the source editor
         if (lines && editorId !== sourceEditorId) {
             // Handle both single numbers and arrays of numbers
             const lineNumbers = Array.isArray(lines) ? lines : [lines];
-            
+
             // Get the middle line number for scrolling
             const middleIndex = Math.floor(lineNumbers.length / 2);
             let hasScrolled = false;
-            
+
             lineNumbers.forEach((line, index) => {
                 const lineElement = document.querySelector(`#${editorId} .line:nth-child(${line})`);
                 if (lineElement) {
-                    lineElement.classList.add('highlight');
-                    
+                    lineElement.classList.add(newState);
+
                     // Scroll to the middle line of the highlighted range
                     if (index === middleIndex && !hasScrolled) {
                         lineElement.scrollIntoView({
@@ -246,7 +264,7 @@ function highlightCorrespondingLines(sourceEditorId, lineNumber) {
 // Given a line in sourceEditorId, find the corresponding lines in the other editors that should be highlighted.
 function findCorrespondingLines(sourceEditorId, lineNumber) {
     let result = {};
-    
+
     switch (sourceEditorId) {
         case 'preGradGraph':
             result.postGradGraph = preToPost[lineNumber] || [];
@@ -265,7 +283,7 @@ function findCorrespondingLines(sourceEditorId, lineNumber) {
                 }
             }
             break;
-            
+
         case 'postGradGraph':
             result.preGradGraph = postToPre[lineNumber] || [];
             if (codeData) {
@@ -274,7 +292,7 @@ function findCorrespondingLines(sourceEditorId, lineNumber) {
                 result.generatedCode =  postToCppCode[lineNumber] || [];
             }
             break;
-            
+
         case 'generatedCode':
             if (codeData) {
                 // Python code
@@ -292,7 +310,7 @@ function findCorrespondingLines(sourceEditorId, lineNumber) {
             }
             break;
     }
-    
+
     return result;
 }
 
