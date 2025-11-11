@@ -197,6 +197,33 @@ impl StructuredLogParser for DynamoOutputGraphParser {
     }
 }
 
+pub struct BytecodeDumpParser;
+impl StructuredLogParser for BytecodeDumpParser {
+    fn name(&self) -> &'static str {
+        "bytecode_dump"
+    }
+    fn get_metadata<'e>(&self, e: &'e Envelope) -> Option<Metadata<'e>> {
+        e.bytecode_dump
+            .as_ref()
+            .map(|m| Metadata::BytecodeDump(m))
+    }
+    fn parse<'e>(
+        &self,
+        lineno: usize,
+        metadata: Metadata<'e>,
+        _rank: Option<u32>,
+        compile_id: &Option<CompileId>,
+        _payload: &str,
+    ) -> anyhow::Result<ParserResults> {
+        if let Metadata::BytecodeDump(metadata) = metadata {
+            let filename = format!("{}_{}.txt", metadata.co_name, metadata.bytecode_type);
+            payload_file_output(&filename, lineno, compile_id)
+        } else {
+            Err(anyhow::anyhow!("Expected Bytecode metadata"))
+        }
+    }
+}
+
 pub struct DynamoGuardParser<'t> {
     tt: &'t TinyTemplate<'t>,
 }
@@ -1175,6 +1202,7 @@ pub fn default_parsers<'t>(
         })),
         Box::new(GraphDumpParser),
         Box::new(DynamoOutputGraphParser),
+        Box::new(BytecodeDumpParser),
         Box::new(DynamoGuardParser { tt }),
         Box::new(InductorOutputCodeParser::new(parser_config)),
         Box::new(OptimizeDdpSplitChildParser),

@@ -426,6 +426,12 @@ pub struct DynamoOutputGraphMetadata {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BytecodeDumpMetadata {
+    pub co_name: String,
+    pub bytecode_type: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DynamoStartMetadata {
     pub stack: Option<StackSummary>,
 }
@@ -692,6 +698,7 @@ pub enum Metadata<'e> {
     GraphDump(&'e GraphDumpMetadata),
     DynamoOutputGraph(&'e DynamoOutputGraphMetadata),
     #[allow(dead_code)]
+    BytecodeDump(&'e BytecodeDumpMetadata),
     DynamoStart(&'e DynamoStartMetadata),
     InductorOutputCode(&'e InductorOutputCodeMetadata),
     OptimizeDdpSplitChild(&'e OptimizeDdpSplitChildMetadata),
@@ -763,6 +770,7 @@ pub struct Envelope {
     pub exported_program: Option<EmptyMetadata>,
     #[serde(flatten)]
     pub _other: FxHashMap<String, Value>,
+    pub bytecode_dump: Option<BytecodeDumpMetadata>,
 }
 
 type MetaTensorId = u64;
