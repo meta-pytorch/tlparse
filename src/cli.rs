@@ -2,6 +2,7 @@ use clap::Parser;
 
 use anyhow::{bail, Context};
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 
 use tlparse::{
@@ -57,6 +58,12 @@ pub struct Cli {
     /// Parse all ranks and create a unified multi-rank report
     #[arg(long)]
     all_ranks_html: bool,
+    /// Start a local HTTP server to serve the output directory
+    #[arg(long)]
+    serve: bool,
+    /// Port for the HTTP server (used with --serve). If not specified, finds an available port.
+    #[arg(long)]
+    port: Option<u16>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -66,6 +73,9 @@ fn main() -> anyhow::Result<()> {
     if cli.all_ranks_html && cli.latest {
         bail!("--latest cannot be used with --all-ranks-html");
     }
+
+    // --serve implies --no-browser (we'll serve instead of opening)
+    let open_browser = !cli.no_browser && !cli.serve;
 
     let path = if cli.latest {
         let input_path = cli.path;
@@ -103,17 +113,22 @@ fn main() -> anyhow::Result<()> {
     };
 
     if cli.all_ranks_html {
-        handle_all_ranks(&config, path, cli.out, cli.overwrite, !cli.no_browser)?;
+        handle_all_ranks(&config, path, cli.out.clone(), cli.overwrite, open_browser)?;
     } else {
         handle_one_rank(
             &config,
             path,
             false, // already converted path to latest log file
-            cli.out,
-            !cli.no_browser,
+            cli.out.clone(),
+            open_browser,
             cli.overwrite,
         )?;
     }
+
+    if cli.serve {
+        serve_directory(&cli.out, cli.port)?;
+    }
+
     Ok(())
 }
 
@@ -259,4 +274,132 @@ fn handle_all_ranks(
     }
 
     Ok(())
+}
+
+/// Find an available port in the given range
+fn find_available_port(start: u16, end: u16) -> anyhow::Result<u16> {
+    use std::net::TcpListener;
+    for port in start..end {
+        if TcpListener::bind(("0.0.0.0", port)).is_ok() {
+            return Ok(port);
+        }
+    }
+    bail!("No available ports in range {}-{}", start, end - 1)
+}
+
+/// Serve a directory over HTTP
+fn serve_directory(dir: &PathBuf, port: Option<u16>) -> anyhow::Result<()> {
+    let port = match port {
+        Some(p) => p,
+        None => find_available_port(8000, 8100)?,
+    };
+
+    let addr = format!("0.0.0.0:{}", port);
+    let server = tiny_http::Server::http(&addr)
+        .map_err(|e| anyhow::anyhow!("Failed to start server on {}: {}", addr, e))?;
+
+    let url = format!("http://localhost:{}/", port);
+    println!("Serving {} at {}", dir.display(), url);
+    println!("Press Ctrl+C to stop");
+
+    let dir = dir.canonicalize()?;
+
+    for request in server.incoming_requests() {
+        let url_path = request.url().trim_start_matches('/');
+        // URL decode the path
+        let url_path = urlencoding_decode(url_path);
+        let file_path = if url_path.is_empty() {
+            dir.join("index.html")
+        } else {
+            dir.join(&url_path)
+        };
+
+        // Security: ensure the path is within the served directory
+        let file_path = match file_path.canonicalize() {
+            Ok(p) if p.starts_with(&dir) => p,
+            _ => {
+                let response =
+                    tiny_http::Response::from_string("404 Not Found").with_status_code(404);
+                let _ = request.respond(response);
+                continue;
+            }
+        };
+
+        if file_path.is_file() {
+            match fs::File::open(&file_path) {
+                Ok(mut file) => {
+                    let mut content = Vec::new();
+                    if file.read_to_end(&mut content).is_ok() {
+                        let content_type = guess_content_type(&file_path);
+                        let response = tiny_http::Response::from_data(content).with_header(
+                            tiny_http::Header::from_bytes(
+                                &b"Content-Type"[..],
+                                content_type.as_bytes(),
+                            )
+                            .unwrap(),
+                        );
+                        let _ = request.respond(response);
+                    } else {
+                        let response =
+                            tiny_http::Response::from_string("500 Internal Server Error")
+                                .with_status_code(500);
+                        let _ = request.respond(response);
+                    }
+                }
+                Err(_) => {
+                    let response =
+                        tiny_http::Response::from_string("404 Not Found").with_status_code(404);
+                    let _ = request.respond(response);
+                }
+            }
+        } else {
+            let response = tiny_http::Response::from_string("404 Not Found").with_status_code(404);
+            let _ = request.respond(response);
+        }
+    }
+
+    Ok(())
+}
+
+/// Simple URL decoding (handles %XX sequences)
+fn urlencoding_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            result.push('%');
+            result.push_str(&hex);
+        } else if c == '+' {
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Guess content type based on file extension
+fn guess_content_type(path: &PathBuf) -> String {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext.to_lowercase().as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "txt" => "text/plain; charset=utf-8",
+        "py" => "text/x-python; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
