@@ -318,8 +318,8 @@ fn serve_directory(dir: &PathBuf, port: Option<u16>) -> anyhow::Result<()> {
         let file_path = match file_path.canonicalize() {
             Ok(p) if p.starts_with(&dir) => p,
             _ => {
-                let response = tiny_http::Response::from_string("404 Not Found")
-                    .with_status_code(404);
+                let response =
+                    tiny_http::Response::from_string("404 Not Found").with_status_code(404);
                 let _ = request.respond(response);
                 continue;
             }
@@ -331,30 +331,29 @@ fn serve_directory(dir: &PathBuf, port: Option<u16>) -> anyhow::Result<()> {
                     let mut content = Vec::new();
                     if file.read_to_end(&mut content).is_ok() {
                         let content_type = guess_content_type(&file_path);
-                        let response = tiny_http::Response::from_data(content)
-                            .with_header(
-                                tiny_http::Header::from_bytes(
-                                    &b"Content-Type"[..],
-                                    content_type.as_bytes(),
-                                )
-                                .unwrap(),
-                            );
+                        let response = tiny_http::Response::from_data(content).with_header(
+                            tiny_http::Header::from_bytes(
+                                &b"Content-Type"[..],
+                                content_type.as_bytes(),
+                            )
+                            .unwrap(),
+                        );
                         let _ = request.respond(response);
                     } else {
-                        let response = tiny_http::Response::from_string("500 Internal Server Error")
-                            .with_status_code(500);
+                        let response =
+                            tiny_http::Response::from_string("500 Internal Server Error")
+                                .with_status_code(500);
                         let _ = request.respond(response);
                     }
                 }
                 Err(_) => {
-                    let response = tiny_http::Response::from_string("404 Not Found")
-                        .with_status_code(404);
+                    let response =
+                        tiny_http::Response::from_string("404 Not Found").with_status_code(404);
                     let _ = request.respond(response);
                 }
             }
         } else {
-            let response = tiny_http::Response::from_string("404 Not Found")
-                .with_status_code(404);
+            let response = tiny_http::Response::from_string("404 Not Found").with_status_code(404);
             let _ = request.respond(response);
         }
     }
