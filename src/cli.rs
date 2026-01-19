@@ -444,7 +444,7 @@ fn check_gh_cli() -> anyhow::Result<()> {
 fn confirm_gist_upload() -> anyhow::Result<bool> {
     println!();
     println!("╔════════════════════════════════════════════════════════════════════╗");
-    println!("║                        ⚠️  PRIVACY WARNING ⚠️                        ║");
+    println!("║                        ⚠️  PRIVACY WARNING ⚠️                       ║");
     println!("╠════════════════════════════════════════════════════════════════════╣");
     println!("║ The tlparse output contains detailed information about your model, ║");
     println!("║ including:                                                         ║");
@@ -452,9 +452,9 @@ fn confirm_gist_upload() -> anyhow::Result<bool> {
     println!("║   • Graph operations and transformations                           ║");
     println!("║   • Compilation traces and debug information                       ║");
     println!("║                                                                    ║");
-    println!("║ This gist will be SECRET but ANYONE WITH THE LINK can view it.    ║");
-    println!("║ GitHub secret gists are not truly private - they are unlisted     ║");
-    println!("║ but accessible to anyone who has the URL.                         ║");
+    println!("║ This gist will be SECRET but ANYONE WITH THE LINK can view it.     ║");
+    println!("║ GitHub secret gists are not truly private - they are unlisted      ║");
+    println!("║ but accessible to anyone who has the URL.                          ║");
     println!("╚════════════════════════════════════════════════════════════════════╝");
     println!();
     print!("Do you want to proceed with uploading to GitHub Gist? [y/N]: ");
