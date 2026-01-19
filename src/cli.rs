@@ -2,8 +2,9 @@ use clap::Parser;
 
 use anyhow::{bail, Context};
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use std::process::Command;
 
 use tlparse::{
     // New reusable library API for multi-rank landing generation
@@ -64,6 +65,9 @@ pub struct Cli {
     /// Port for the HTTP server (used with --serve). If not specified, finds an available port.
     #[arg(long)]
     port: Option<u16>,
+    /// Upload output to GitHub Gist using gh CLI. Requires gh to be installed and authenticated.
+    #[arg(long)]
+    gist: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -123,6 +127,10 @@ fn main() -> anyhow::Result<()> {
             open_browser,
             cli.overwrite,
         )?;
+    }
+
+    if cli.gist {
+        handle_gist_upload(&cli.out)?;
     }
 
     if cli.serve {
@@ -402,4 +410,138 @@ fn guess_content_type(path: &PathBuf) -> String {
         _ => "application/octet-stream",
     }
     .to_string()
+}
+
+/// Check if gh CLI is installed and authenticated
+fn check_gh_cli() -> anyhow::Result<()> {
+    // Check if gh is available
+    let output = Command::new("gh")
+        .arg("--version")
+        .output()
+        .context("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/")?;
+
+    if !output.status.success() {
+        bail!("GitHub CLI (gh) is not working properly");
+    }
+
+    // Check if gh is authenticated
+    let output = Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .context("Failed to check gh authentication status")?;
+
+    if !output.status.success() {
+        bail!(
+            "GitHub CLI is not authenticated. Run 'gh auth login' to authenticate.\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(())
+}
+
+/// Prompt user with privacy warning and get confirmation
+fn confirm_gist_upload() -> anyhow::Result<bool> {
+    println!();
+    println!("╔════════════════════════════════════════════════════════════════════╗");
+    println!("║                        ⚠️  PRIVACY WARNING ⚠️                        ║");
+    println!("╠════════════════════════════════════════════════════════════════════╣");
+    println!("║ The tlparse output contains detailed information about your model, ║");
+    println!("║ including:                                                         ║");
+    println!("║   • Model architecture and structure                               ║");
+    println!("║   • Graph operations and transformations                           ║");
+    println!("║   • Compilation traces and debug information                       ║");
+    println!("║                                                                    ║");
+    println!("║ This gist will be SECRET but ANYONE WITH THE LINK can view it.    ║");
+    println!("║ GitHub secret gists are not truly private - they are unlisted     ║");
+    println!("║ but accessible to anyone who has the URL.                         ║");
+    println!("╚════════════════════════════════════════════════════════════════════╝");
+    println!();
+    print!("Do you want to proceed with uploading to GitHub Gist? [y/N]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    let input = input.trim().to_lowercase();
+    Ok(input == "y" || input == "yes")
+}
+
+/// Collect all files from a directory recursively
+fn collect_files_recursive(dir: &PathBuf, base: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            files.extend(collect_files_recursive(&path, base)?);
+        } else if path.is_file() {
+            files.push(path);
+        }
+    }
+
+    Ok(files)
+}
+
+/// Upload the output directory to GitHub Gist
+fn upload_to_gist(output_dir: &PathBuf) -> anyhow::Result<String> {
+    println!("Collecting files from {}...", output_dir.display());
+
+    let files = collect_files_recursive(output_dir, output_dir)?;
+
+    if files.is_empty() {
+        bail!("No files found in output directory");
+    }
+
+    println!("Uploading {} files to GitHub Gist...", files.len());
+
+    // Build the gh gist create command with all files
+    let mut cmd = Command::new("gh");
+    cmd.arg("gist")
+        .arg("create")
+        .arg("--desc")
+        .arg("tlparse output - PyTorch compilation trace");
+
+    for file in &files {
+        cmd.arg(file);
+    }
+
+    let output = cmd.output().context("Failed to execute gh gist create")?;
+
+    if !output.status.success() {
+        bail!(
+            "Failed to create gist: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let gist_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    Ok(gist_url)
+}
+
+/// Handle the --gist flag: check prerequisites, confirm, and upload
+fn handle_gist_upload(output_dir: &PathBuf) -> anyhow::Result<()> {
+    // Check gh CLI is available and authenticated
+    check_gh_cli()?;
+
+    // Prompt for confirmation
+    if !confirm_gist_upload()? {
+        println!("Gist upload cancelled.");
+        return Ok(());
+    }
+
+    // Upload to gist
+    let gist_url = upload_to_gist(output_dir)?;
+
+    println!();
+    println!("✅ Successfully uploaded to GitHub Gist!");
+    println!();
+    println!("   {}", gist_url);
+    println!();
+    println!("Share this URL with PyTorch developers to help debug your issue.");
+
+    Ok(())
 }
