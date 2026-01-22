@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail};
 use chrono::Datelike;
 use fxhash::{FxHashMap, FxHashSet};
 use md5::{Digest, Md5};
+use once_cell::sync::Lazy;
 use std::ffi::{OsStr, OsString};
 
 use html_escape::encode_text;
@@ -1213,13 +1214,27 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 directory_name,
             );
 
+            // For highlight.js, we pass raw content (HTML-escaped by template)
+            // For already-HTML content (output_code), extract plain text first
+            let clean_output_code = if is_already_html(&output_code_content) {
+                extract_text_from_html(&output_code_content)
+            } else {
+                output_code_content.clone()
+            };
+            let clean_aot_code = if is_already_html(&aot_code_content) {
+                extract_text_from_html(&aot_code_content)
+            } else {
+                aot_code_content.clone()
+            };
+
             // Convert node mappings to line number mappings
+            // Use the cleaned content so line numbers match what's displayed
             let line_mappings_content = convert_node_mappings_to_line_numbers(
                 &node_mappings_content,
                 &pre_grad_graph_content,
                 &post_grad_graph_content,
-                &output_code_content,
-                &aot_code_content,
+                &clean_output_code,
+                &clean_aot_code,
             );
             let line_mappings_content_str = serde_json::to_string_pretty(&line_mappings_content)
                 .unwrap_or_else(|_| "{}".to_string());
@@ -1233,8 +1248,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                         js: PROVENANCE_JS,
                         pre_grad_graph_content,
                         post_grad_graph_content,
-                        output_code_content,
-                        aot_code_content,
+                        output_code_content: clean_output_code,
+                        aot_code_content: clean_aot_code,
                         line_mappings_content: line_mappings_content_str,
                     },
                 )?,
@@ -2010,6 +2025,35 @@ pub fn analyze_graph_runtime_deltas(
         graphs,
         has_mismatched_graph_counts: false,
     })
+}
+
+/// Checks if content appears to be pre-rendered HTML (e.g., already contains HTML tags).
+fn is_already_html(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.starts_with("<pre")
+        || trimmed.starts_with("<span")
+        || trimmed.starts_with("<!DOCTYPE")
+        || trimmed.starts_with("<html")
+}
+
+/// Regex for stripping HTML tags, compiled once for efficiency.
+static HTML_TAG_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]+>").unwrap());
+
+/// Extracts plain text from HTML by removing all tags and decoding entities.
+/// Note: This is a simple implementation that handles common cases but may not
+/// correctly process malformed HTML, nested tags within attributes, or CDATA sections.
+fn extract_text_from_html(html: &str) -> String {
+    let text = HTML_TAG_REGEX.replace_all(html, "");
+
+    // Decode common HTML entities (covers most cases in generated code)
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ")
 }
 
 /// Converts node-based mappings to line number-based mappings for visualization.

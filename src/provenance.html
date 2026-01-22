@@ -5,6 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inductor Provenance Tracking Highlighter</title>
+
+    <!-- highlight.js from CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <style>
         {css | format_unescaped}
     </style>
@@ -12,17 +17,58 @@
 
 <body>
     <div class="editor-container">
-        <div id="preGradGraph" class="editor">
-            <pre>{pre_grad_graph_content}</pre>
+        <div class="editor-wrapper">
+            <div class="editor-header">
+                <span class="editor-title">Pre-Grad Graph</span>
+                <span class="editor-stats" id="preGradStats"></span>
+            </div>
+            <div id="preGradGraph" class="editor">
+                <pre><code class="language-python">{pre_grad_graph_content}</code></pre>
+            </div>
         </div>
         <div id="divider1" class="divider"></div>
-        <div id="postGradGraph" class="editor">
-            <pre>{post_grad_graph_content}</pre>
+        <div class="editor-wrapper">
+            <div class="editor-header">
+                <span class="editor-title">Post-Grad Graph</span>
+                <span class="editor-stats" id="postGradStats"></span>
+            </div>
+            <div id="postGradGraph" class="editor">
+                <pre><code class="language-python">{post_grad_graph_content}</code></pre>
+            </div>
         </div>
         <div id="divider2" class="divider"></div>
-        <div id="generatedCode" class="editor">
-            <pre>{output_code_content | format_unescaped}{aot_code_content}</pre>
+        <div class="editor-wrapper">
+            <div class="editor-header">
+                <span class="editor-title">Generated Code</span>
+                <span class="editor-stats" id="generatedCodeStats"></span>
+            </div>
+            <div id="generatedCode" class="editor">
+                <pre><code class="language-python">{output_code_content}{aot_code_content}</code></pre>
+            </div>
         </div>
+    </div>
+
+    <!-- Keyboard help overlay -->
+    <div id="keyboard-help" class="help-overlay">
+        <h3>Keyboard Shortcuts</h3>
+        <ul>
+            <li><kbd>n</kbd> / <kbd>N</kbd> - Next/Previous mapped line</li>
+            <li><kbd>j</kbd> / <kbd>J</kbd> - Jump to corresponding panel</li>
+            <li><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> - Maximize panel</li>
+            <li><kbd>?</kbd> - Toggle this help</li>
+            <li><kbd>Esc</kbd> - Clear selection / Restore panels</li>
+        </ul>
+        <p class="help-hint">Press <kbd>?</kbd> to close</p>
+    </div>
+
+    <!-- Navigation hints bar -->
+    <div class="nav-hints-bar">
+        <span class="nav-hint"><kbd>n</kbd>/<kbd>N</kbd> next/prev</span>
+        <span class="nav-hint"><kbd>j</kbd> jump to panel</span>
+        <span class="nav-hint"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> maximize</span>
+        <span class="nav-hint"><strong>Double-click</strong> header to expand</span>
+        <span class="nav-hint"><strong>Double-click</strong> code to find definition</span>
+        <span class="nav-hint"><kbd>?</kbd> help</span>
     </div>
 
     <!-- Line mappings data for JavaScript -->
