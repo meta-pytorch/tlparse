@@ -9,6 +9,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use regex::Regex;
 use serde_json::Value;
 use std::cell::RefCell;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
@@ -23,6 +24,7 @@ use crate::types::*;
 pub mod parsers;
 mod templates;
 mod types;
+pub mod vllm;
 
 pub use types::{
     ArtifactFlags, CollectiveSchedule, CollectivesParityReport, Diagnostics, DivergenceFlags,
@@ -121,6 +123,7 @@ fn add_file_output(
     output: &mut ParseOutput,
     compile_directory: &mut Vec<OutputFile>,
     output_count: &mut i32,
+    vllm_state: &vllm::VllmState,
 ) {
     let is_stack_traces = is_stack_traces_file(&filename);
     let maybe_content = if is_stack_traces {
@@ -130,6 +133,7 @@ fn add_file_output(
     };
     output.push((filename.clone(), content));
     let filename_str = filename.to_string_lossy().to_string();
+
     let suffix = if filename_str.contains("cache_miss") {
         "❌".to_string()
     } else if filename_str.contains("cache_hit") {
@@ -139,6 +143,10 @@ fn add_file_output(
     } else {
         "".to_string()
     };
+
+    // Track artifact for vLLM summary
+    vllm_state.add_artifact(&filename, suffix.clone());
+
     let readable_url = if let Some(c) = maybe_content {
         Some(add_stack_traces_html(&filename, &c, output, output_count))
     } else {
@@ -214,6 +222,7 @@ fn run_parser<'t>(
     compile_directory: &mut Vec<OutputFile>,
     multi: &MultiProgress,
     stats: &mut Stats,
+    vllm_state: &vllm::VllmState,
 ) -> ParserResult {
     let mut payload_filename = ParserResult::NoPayload;
     if let Some(md) = parser.get_metadata(&e) {
@@ -224,10 +233,24 @@ fn run_parser<'t>(
                     match parser_result {
                         ParserOutput::File(raw_filename, out) => {
                             let filename = add_unique_suffix(raw_filename, *output_count);
-                            add_file_output(filename, out, output, compile_directory, output_count);
+                            add_file_output(
+                                filename,
+                                out,
+                                output,
+                                compile_directory,
+                                output_count,
+                                vllm_state,
+                            );
                         }
                         ParserOutput::GlobalFile(filename, out) => {
-                            add_file_output(filename, out, output, compile_directory, output_count);
+                            add_file_output(
+                                filename,
+                                out,
+                                output,
+                                compile_directory,
+                                output_count,
+                                vllm_state,
+                            );
                         }
                         ParserOutput::PayloadFile(raw_filename) => {
                             let filename = add_unique_suffix(raw_filename, *output_count);
@@ -240,6 +263,7 @@ fn run_parser<'t>(
                                 output,
                                 compile_directory,
                                 output_count,
+                                vllm_state,
                             );
                         }
                         ParserOutput::PayloadReformatFile(raw_filename, formatter) => {
@@ -255,6 +279,7 @@ fn run_parser<'t>(
                                         output,
                                         compile_directory,
                                         output_count,
+                                        vllm_state,
                                     );
                                 }
                                 Err(err) => {
@@ -340,6 +365,7 @@ fn handle_guard(
     tt: &TinyTemplate,
     sym_expr_info_index: &RefCell<SymExprInfoIndex>,
     export_failures: &mut Vec<ExportFailure>,
+    vllm_state: &vllm::VllmState,
 ) {
     let sym_expr_info_index_borrowed = sym_expr_info_index.borrow();
     let parser: Box<dyn StructuredLogParser> =
@@ -357,6 +383,7 @@ fn handle_guard(
         compile_directory,
         multi,
         stats,
+        vllm_state,
     );
 
     let filename = format!(
@@ -473,6 +500,16 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
 
     let mut tt: TinyTemplate = TinyTemplate::new();
     tt.add_formatter("format_unescaped", tinytemplate::format_unescaped);
+    tt.add_formatter("format_float", |value, output| {
+        if let serde_json::Value::Number(n) = value {
+            if let Some(f) = n.as_f64() {
+                write!(output, "{:.3}", f)?;
+                return Ok(());
+            }
+        }
+        write!(output, "{}", value)?;
+        Ok(())
+    });
     if config.export {
         tt.add_template("index.html", TEMPLATE_EXPORT_INDEX)?;
         tt.add_template(
@@ -494,6 +531,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         )?;
     }
     tt.add_template("provenance_tracking.html", TEMPLATE_PROVENANCE_TRACKING)?;
+    tt.add_template("vllm_summary.html", vllm::templates::VLLM_SUMMARY_TEMPLATE)?;
 
     let mut unknown_fields: FxHashSet<String> = FxHashSet::default();
 
@@ -520,7 +558,10 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         .peekable();
 
     let default_parsers = default_parsers(&tt, config);
+    let vllm_state = vllm::VllmState::new();
+    let vllm_parsers = vllm::vllm_parsers_with_state(vllm_state.clone());
     let mut all_parsers: Vec<&Box<dyn StructuredLogParser>> = default_parsers.iter().collect();
+    all_parsers.extend(vllm_parsers.iter());
     let mut chromium_events: Vec<serde_json::Value> = Vec::new();
     all_parsers.extend(config.custom_parsers.iter());
 
@@ -757,6 +798,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 compile_directory,
                 &multi,
                 &mut stats,
+                &vllm_state,
             );
             // Take the last PayloadFilename entry as per the requirement
             if matches!(result, ParserResult::PayloadFilename(_)) {
@@ -790,6 +832,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 compile_directory,
                 &multi,
                 &mut stats,
+                &vllm_state,
             );
             // Take the last PayloadFilename entry as per the requirement
             if matches!(result, ParserResult::PayloadFilename(_)) {
@@ -801,6 +844,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 "compilation_metrics_{}.html",
                 (output_count - 1).to_string(),
             );
+
             let id = e.compile_id.clone().map_or("(unknown) ".to_string(), |c| {
                 format!(
                     "<a href='{}/{}'>{cid}</a> ",
@@ -875,6 +919,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     &tt,
                     &sym_expr_info_index,
                     &mut export_failures,
+                    &vllm_state,
                 );
             }
 
@@ -904,6 +949,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     &tt,
                     &sym_expr_info_index,
                     &mut export_failures,
+                    &vllm_state,
                 );
             }
 
@@ -1101,6 +1147,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         PathBuf::from("compile_directory.json"),
         serde_json::to_string_pretty(&directory_to_json(&directory))?,
     ));
+
+    // Generate traditional tlparse index
     let index_context = IndexContext {
         css: CSS,
         javascript: JAVASCRIPT,
@@ -1122,10 +1170,21 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         has_inductor_provenance: config.inductor_provenance,
         directory_names: directory_names.clone(),
     };
-    output.push((
-        PathBuf::from("index.html"),
-        tt.render("index.html", &index_context)?,
-    ));
+    let tlparse_index_html = tt.render("index.html", &index_context)?;
+
+    if vllm_state.has_artifacts() {
+        // If vLLM artifacts are present, use vLLM summary as index.html and
+        // save traditional tlparse index as tlparse_index.html for reference.
+        // `has_vllm_artifacts` gets set to true when the vLLM parsers are
+        // triggered. This happens when we see the following events:
+        // `vllm_subgraph_*`, `vllm_compilation_config`,
+        // `vllm_piecewise_split_graph`.
+        let vllm_html = vllm::generate_vllm_summary(&vllm_state, &tt, &config.custom_header_html)?;
+        output.push((PathBuf::from("index.html"), vllm_html));
+        output.push((PathBuf::from("tlparse_index.html"), tlparse_index_html));
+    } else {
+        output.push((PathBuf::from("index.html"), tlparse_index_html));
+    }
 
     output.push((PathBuf::from("raw.log"), fs::read_to_string(path)?));
 

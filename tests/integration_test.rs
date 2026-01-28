@@ -2631,3 +2631,42 @@ fn test_graph_execution_order_diagnostics() -> Result<(), Box<dyn std::error::Er
 
     Ok(())
 }
+
+#[test]
+fn test_parse_vllm_sample() {
+    let path = Path::new("tests/inputs/vllm_sample.log").to_path_buf();
+    let config = tlparse::ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config);
+    assert!(output.is_ok());
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // check for vLLM-specific artifacts
+    let expected_files = [
+        "-_0_0_0/vllm_compilation_config",
+        "-_0_0_0/vllm_piecewise_split_graph",
+        "-_-_-_-/vllm_submod_0",
+        "-_-_-_-/vllm_submod_2",
+    ];
+
+    for prefix in expected_files {
+        assert!(
+            prefix_exists(&map, prefix),
+            "{} not found in output",
+            prefix
+        );
+    }
+
+    let index_html = &map[&PathBuf::from("index.html")];
+
+    assert!(index_html.contains("vLLM Compilation Summary"),);
+    assert!(index_html.contains("Dynamo Compilation"),);
+    assert!(index_html.contains("Compilation Configuration"),);
+    assert!(index_html.contains("Piecewise Split Graph"),);
+    assert!(index_html.contains("range [1, 16384]"),);
+    assert!(index_html.contains("size 8"),);
+    assert!(index_html.contains("submod_0"),);
+    assert!(index_html.contains("submod_2"),);
+}

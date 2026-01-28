@@ -64,7 +64,7 @@ pub trait StructuredLogParser {
 }
 
 // Helper function to build file path with compile ID directory
-fn build_file_path(filename: &str, lineno: usize, compile_id: &Option<CompileId>) -> PathBuf {
+pub fn build_file_path(filename: &str, lineno: usize, compile_id: &Option<CompileId>) -> PathBuf {
     let compile_id_dir: PathBuf = compile_id
         .as_ref()
         .map_or(format!("unknown_{lineno}"), |cid| cid.as_directory_name())
@@ -151,6 +151,12 @@ impl StructuredLogParser for GraphDumpParser {
         "graph_dump" // ToDO: more specific?
     }
     fn get_metadata<'e>(&self, e: &'e Envelope) -> Option<Metadata<'e>> {
+        if let Some(graph_dump) = &e.graph_dump {
+            if graph_dump.name.starts_with("vllm_") {
+                // Skip vLLM-specific graph dumps (handled by parsers under src/vllm)
+                return None;
+            }
+        }
         e.graph_dump.as_ref().map(|m| Metadata::GraphDump(m))
     }
     fn parse<'e>(
