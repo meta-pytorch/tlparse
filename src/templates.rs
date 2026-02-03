@@ -376,6 +376,36 @@ pub static TEMPLATE_COMPILATION_METRICS: &str = r#"
     </tr>
     {{ endfor }}
     </table>
+    <h2>Created Symbols</h2>
+    <table>
+    <tr>
+        <th>Symbol</th> <th>Value</th> <th>Range</th> <th>Source</th> <th>User stack</th> <th>Framework stack</th>
+    </tr>
+    {{ for sym in create_symbols }}
+    <tr>
+        <td>{sym.symbol}</td>
+        <td>{sym.val}</td>
+        <td>{sym.vr}</td>
+        <td>{sym.source}</td>
+        <td>{sym.user_stack_html | format_unescaped}</td>
+        <td>{sym.stack_html | format_unescaped}</td>
+    </tr>
+    {{ endfor }}
+    </table>
+    <h2>Unbacked Symbols</h2>
+    <table>
+    <tr>
+        <th>Symbol</th> <th>Range</th> <th>User stack</th> <th>Framework stack</th>
+    </tr>
+    {{ for sym in unbacked_symbols }}
+    <tr>
+        <td>{sym.symbol}</td>
+        <td>{sym.vr}</td>
+        <td>{sym.user_stack_html | format_unescaped}</td>
+        <td>{sym.stack_html | format_unescaped}</td>
+    </tr>
+    {{ endfor }}
+    </table>
     {qps | format_unescaped}
 </body>
 </html>

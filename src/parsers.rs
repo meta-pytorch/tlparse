@@ -390,6 +390,8 @@ pub struct CompilationMetricsParser<'t> {
     pub stack_index: &'t RefCell<StackIndex>,
     pub symbolic_shape_specialization_index: &'t RefCell<SymbolicShapeSpecializationIndex>,
     pub guard_added_fast_index: &'t RefCell<GuardAddedFastIndex>,
+    pub create_symbol_index: &'t RefCell<CreateSymbolIndex>,
+    pub unbacked_symbol_index: &'t RefCell<UnbackedSymbolIndex>,
     pub output_files: &'t Vec<OutputFile>,
     pub compile_id_dir: &'t PathBuf,
 }
@@ -486,6 +488,50 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                     ),
                 })
                 .collect();
+            let create_symbols = self
+                .create_symbol_index
+                .borrow_mut()
+                .remove(&cid)
+                .unwrap_or(Vec::new())
+                .drain(..)
+                .map(|sym| CreateSymbolContext {
+                    symbol: sym.symbol.unwrap_or("".to_string()),
+                    val: sym.val.unwrap_or("".to_string()),
+                    vr: sym.vr.unwrap_or("".to_string()),
+                    source: sym.source.unwrap_or("".to_string()),
+                    user_stack_html: format_stack(
+                        &sym.user_stack.unwrap_or(Vec::new()),
+                        "User Stack",
+                        false,
+                    ),
+                    stack_html: format_stack(
+                        &sym.stack.unwrap_or(Vec::new()),
+                        "Framework Stack",
+                        false,
+                    ),
+                })
+                .collect();
+            let unbacked_symbols = self
+                .unbacked_symbol_index
+                .borrow_mut()
+                .remove(&cid)
+                .unwrap_or(Vec::new())
+                .drain(..)
+                .map(|sym| UnbackedSymbolContext {
+                    symbol: sym.symbol.unwrap_or("".to_string()),
+                    vr: sym.vr.unwrap_or("".to_string()),
+                    user_stack_html: format_stack(
+                        &sym.user_stack.unwrap_or(Vec::new()),
+                        "User Stack",
+                        false,
+                    ),
+                    stack_html: format_stack(
+                        &sym.stack.unwrap_or(Vec::new()),
+                        "Framework Stack",
+                        false,
+                    ),
+                })
+                .collect();
             let remove_prefix = |x: &String| -> String {
                 // url is X_Y_Z/<rest>. Get the rest of the string for the link
                 // on compilation metrics page
@@ -512,6 +558,8 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                 mini_stack_html: mini_stack_html,
                 symbolic_shape_specializations: specializations,
                 guards_added_fast: guards_added_fast,
+                create_symbols: create_symbols,
+                unbacked_symbols: unbacked_symbols,
                 output_files: &output_files,
                 compile_id_dir: &self.compile_id_dir,
                 qps: TEMPLATE_QUERY_PARAM_SCRIPT,

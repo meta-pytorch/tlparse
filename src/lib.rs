@@ -491,6 +491,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         RefCell::new(FxHashMap::default());
     let guard_added_fast_index: RefCell<GuardAddedFastIndex> = RefCell::new(FxHashMap::default());
     let sym_expr_info_index: RefCell<SymExprInfoIndex> = RefCell::new(FxHashMap::default());
+    let create_symbol_index: RefCell<CreateSymbolIndex> = RefCell::new(FxHashMap::default());
+    let unbacked_symbol_index: RefCell<UnbackedSymbolIndex> = RefCell::new(FxHashMap::default());
 
     // Store results in an output ParseOutput
     let mut output: ParseOutput = Vec::new();
@@ -819,6 +821,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     stack_index: &stack_index,
                     symbolic_shape_specialization_index: &symbolic_shape_specialization_index,
                     guard_added_fast_index: &guard_added_fast_index,
+                    create_symbol_index: &create_symbol_index,
+                    unbacked_symbol_index: &unbacked_symbol_index,
                     output_files: &copied_directory,
                     compile_id_dir: &compile_id_dir,
                 });
@@ -996,7 +1000,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     .insert(sym_expr_info.result_id.unwrap(), sym_expr_info);
             }
 
-            if let Some(unbacked_symbol) = e.create_unbacked_symbol {
+            if let Some(ref unbacked_symbol) = e.create_unbacked_symbol {
                 sym_expr_info_index.borrow_mut().insert(
                     unbacked_symbol.node_id.unwrap(),
                     SymExprInfoMetadata {
@@ -1008,6 +1012,38 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     },
                 );
             }
+        }
+
+        // Handle symbol creation events OUTSIDE of export block - they should always be collected
+        if let Some(unbacked_symbol) = e.create_unbacked_symbol.clone() {
+            // Apply same data migration as in CompilationMetricsParser for consistent HashMap keys
+            let mut cid = e.compile_id.clone();
+            if let Some(c) = cid.as_mut() {
+                if c.frame_compile_id.is_some() {
+                    c.attempt = Some(c.attempt.unwrap_or(0));
+                }
+            }
+            unbacked_symbol_index
+                .borrow_mut()
+                .entry(cid)
+                .or_default()
+                .push(unbacked_symbol);
+        }
+
+        // Handle create_symbol events (backed symbols with concrete values)
+        if let Some(symbol) = e.create_symbol.clone() {
+            // Apply same data migration as in CompilationMetricsParser for consistent HashMap keys
+            let mut cid = e.compile_id.clone();
+            if let Some(c) = cid.as_mut() {
+                if c.frame_compile_id.is_some() {
+                    c.attempt = Some(c.attempt.unwrap_or(0));
+                }
+            }
+            create_symbol_index
+                .borrow_mut()
+                .entry(cid)
+                .or_default()
+                .push(symbol);
         }
 
         if let Some(stack) = e.stack {

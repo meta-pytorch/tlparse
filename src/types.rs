@@ -20,6 +20,8 @@ pub type SymbolicShapeSpecializationIndex =
     FxHashMap<Option<CompileId>, Vec<SymbolicShapeSpecializationMetadata>>;
 pub type GuardAddedFastIndex = FxHashMap<Option<CompileId>, Vec<GuardAddedFastMetadata>>;
 pub type SymExprInfoIndex = FxHashMap<u64, SymExprInfoMetadata>;
+pub type CreateSymbolIndex = FxHashMap<Option<CompileId>, Vec<CreateSymbolMetadata>>;
+pub type UnbackedSymbolIndex = FxHashMap<Option<CompileId>, Vec<UnbackedSymbolMetadata>>;
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
@@ -550,13 +552,23 @@ pub struct SymbolicShapePropagateRealTensorMetadata {
     pub prefix: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct UnbackedSymbolMetadata {
     pub symbol: Option<String>,
     pub node_id: Option<u64>,
     pub user_stack: Option<StackSummary>,
     pub stack: Option<StackSummary>,
     pub vr: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CreateSymbolMetadata {
+    pub symbol: Option<String>,
+    pub val: Option<String>,
+    pub vr: Option<String>,
+    pub source: Option<String>,
+    pub user_stack: Option<StackSummary>,
+    pub stack: Option<StackSummary>,
 }
 
 #[derive(Default, Debug, Deserialize, Serialize)]
@@ -610,6 +622,8 @@ pub struct CompilationMetricsContext<'e> {
     pub stack_html: String,
     pub symbolic_shape_specializations: Vec<SymbolicShapeSpecializationContext>,
     pub guards_added_fast: Vec<GuardAddedFastContext>,
+    pub create_symbols: Vec<CreateSymbolContext>,
+    pub unbacked_symbols: Vec<UnbackedSymbolContext>,
     pub output_files: &'e Vec<OutputFile>,
     pub compile_id_dir: &'e PathBuf,
     pub mini_stack_html: String,
@@ -757,6 +771,7 @@ pub struct Envelope {
     pub propagate_real_tensors_provenance: Option<SymbolicShapePropagateRealTensorMetadata>,
     pub guard_added: Option<SymbolicShapePropagateRealTensorMetadata>,
     pub create_unbacked_symbol: Option<UnbackedSymbolMetadata>,
+    pub create_symbol: Option<CreateSymbolMetadata>,
     pub expression_created: Option<SymExprInfoMetadata>,
     pub missing_fake_kernel: Option<FakeKernelMetadata>,
     pub mismatched_fake_kernel: Option<FakeKernelMetadata>,
@@ -910,6 +925,24 @@ pub struct SymbolicShapeSpecializationContext {
 #[derive(Debug, Serialize)]
 pub struct GuardAddedFastContext {
     pub expr: String,
+    pub user_stack_html: String,
+    pub stack_html: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateSymbolContext {
+    pub symbol: String,
+    pub val: String,
+    pub vr: String,
+    pub source: String,
+    pub user_stack_html: String,
+    pub stack_html: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UnbackedSymbolContext {
+    pub symbol: String,
+    pub vr: String,
     pub user_stack_html: String,
     pub stack_html: String,
 }
