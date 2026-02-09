@@ -1,0 +1,395 @@
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-hover: #e8e8e8;
+  --text: #1a1a1a;
+  --text-secondary: #666666;
+  --border: #d4d4d4;
+  --accent: #2563eb;
+  --status-ok: #16a34a;
+  --status-error: #dc2626;
+  --status-empty: #9ca3af;
+  --status-break: #65a30d;
+  --status-missing: #9333ea;
+  --sidebar-width: 280px;
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas,
+    monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.sidebar-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.sidebar-section {
+  padding: 4px 16px 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  margin-top: 8px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+}
+
+.sidebar-item:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-item.selected {
+  background: var(--accent);
+  color: white;
+}
+
+.sidebar-item .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.ok {
+  background: var(--status-ok);
+}
+.status-dot.error {
+  background: var(--status-error);
+}
+.status-dot.empty {
+  background: var(--status-empty);
+}
+.status-dot.break {
+  background: var(--status-break);
+}
+.status-dot.missing {
+  background: var(--status-missing);
+}
+
+/* Main content area */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.content-header {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.content-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.content-body {
+  flex: 1;
+  padding: 16px 24px;
+  overflow-y: auto;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  background: var(--bg);
+}
+
+.tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+
+/* Artifact list */
+.artifact-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.artifact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bg-secondary);
+}
+
+.artifact-item a {
+  color: var(--accent);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.artifact-item a:hover {
+  text-decoration: underline;
+}
+
+.artifact-suffix {
+  font-size: 14px;
+}
+
+/* Code viewer */
+.code-viewer {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: auto;
+}
+
+.code-viewer pre {
+  padding: 12px;
+  margin: 0;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* Metrics table */
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.metrics-table th {
+  font-weight: 600;
+  background: var(--bg-secondary);
+  width: 240px;
+}
+
+.metrics-table td {
+  font-family: var(--font-mono);
+}
+
+/* Failures table */
+.failures-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.failures-table th,
+.failures-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.failures-table th {
+  font-weight: 600;
+  background: var(--bg-secondary);
+}
+
+.failures-table td pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+/* Loading / error states */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 16px;
+  color: var(--text-secondary);
+}
+
+.error-box {
+  margin: 24px;
+  padding: 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 14px;
+}
+
+/* Stack trie */
+.stack-trie {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.stack-trie ul {
+  list-style: none;
+  padding-left: 1ch;
+}
+
+.stack-trie > ul {
+  padding-left: 0;
+}
+
+.stack-trie li {
+  padding: 1px 0;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.stack-trie .marker {
+  cursor: pointer;
+  user-select: none;
+  margin-right: 4px;
+}
+
+.stack-trie .marker::before {
+  content: "- ";
+}
+
+.stack-trie .marker.collapsed::before {
+  content: "+ ";
+}
+
+.stack-trie .trie-frame {
+  color: var(--text-secondary);
+}
+
+.stack-trie .trie-compile-id {
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.stack-trie .trie-compile-id.ok {
+  background: #dcfce7;
+  color: var(--status-ok);
+}
+.stack-trie .trie-compile-id.error {
+  background: #fef2f2;
+  color: var(--status-error);
+}
+.stack-trie .trie-compile-id.empty {
+  background: #f3f4f6;
+  color: var(--status-empty);
+}
+.stack-trie .trie-compile-id.break {
+  background: #ecfccb;
+  color: var(--status-break);
+}
+.stack-trie .trie-compile-id.missing {
+  background: #f3e8ff;
+  color: var(--status-missing);
+}
+
+/* Overview panel (no compile ID selected) */
+.overview-section {
+  margin-bottom: 24px;
+}
+
+.overview-section h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.global-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.global-link {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.global-link:hover {
+  background: var(--bg-secondary);
+}
