@@ -63,6 +63,8 @@ jobs:
             arch: s390x
           - target: powerpc64le-unknown-linux-gnu
             arch: ppc64le
+          - target: riscv64gc-unknown-linux-gnu
+            arch: riscv64
     steps:
       - uses: actions/checkout@v3
       - name: Build wheels
