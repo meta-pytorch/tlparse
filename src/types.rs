@@ -481,6 +481,9 @@ pub struct CompilationMetricsMetadata {
     pub compliant_custom_ops: Option<Vec<String>>,
     pub restart_reasons: Option<Vec<String>>,
     pub dynamo_time_before_restart_s: Option<f64>,
+    // Capture any additional fields not explicitly listed above
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -627,7 +630,14 @@ pub struct CompilationMetricsContext<'e> {
     pub output_files: &'e Vec<OutputFile>,
     pub compile_id_dir: &'e PathBuf,
     pub mini_stack_html: String,
+    pub extra_metrics: Vec<ExtraMetricContext>,
     pub qps: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExtraMetricContext {
+    pub key: String,
+    pub value_html: String,
 }
 
 #[derive(Debug, Serialize)]

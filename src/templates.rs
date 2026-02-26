@@ -406,6 +406,20 @@ pub static TEMPLATE_COMPILATION_METRICS: &str = r#"
     </tr>
     {{ endfor }}
     </table>
+    {{ if extra_metrics }}
+    <h2>Other Metrics</h2>
+    <table>
+    <tr>
+        <th>Key</th> <th>Value</th>
+    </tr>
+    {{ for em in extra_metrics }}
+    <tr>
+        <td><code>{em.key}</code></td>
+        <td>{em.value_html | format_unescaped}</td>
+    </tr>
+    {{ endfor }}
+    </table>
+    {{ endif }}
     {qps | format_unescaped}
 </body>
 </html>
