@@ -550,6 +550,36 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                     readable_url: o.readable_url.as_ref().map(|u| remove_prefix(u)),
                 })
                 .collect();
+            let extra_metrics: Vec<ExtraMetricContext> = m
+                .extra
+                .iter()
+                .map(|(key, value)| {
+                    let value_html = match value {
+                        serde_json::Value::String(s) => {
+                            if s.len() > 200 {
+                                format!("<details><summary>(click to expand)</summary><pre>{}</pre></details>",
+                                    html_escape::encode_text(s))
+                            } else {
+                                html_escape::encode_text(s).to_string()
+                            }
+                        }
+                        serde_json::Value::Null => "null".to_string(),
+                        other => {
+                            let s = other.to_string();
+                            if s.len() > 200 {
+                                format!("<details><summary>(click to expand)</summary><pre>{}</pre></details>",
+                                    html_escape::encode_text(&s))
+                            } else {
+                                html_escape::encode_text(&s).to_string()
+                            }
+                        }
+                    };
+                    ExtraMetricContext {
+                        key: key.clone(),
+                        value_html,
+                    }
+                })
+                .collect();
             let context = CompilationMetricsContext {
                 css: crate::CSS,
                 m: &m,
@@ -562,6 +592,7 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                 unbacked_symbols: unbacked_symbols,
                 output_files: &output_files,
                 compile_id_dir: &self.compile_id_dir,
+                extra_metrics: extra_metrics,
                 qps: TEMPLATE_QUERY_PARAM_SCRIPT,
             };
             let output = self.tt.render(&filename, &context)?;

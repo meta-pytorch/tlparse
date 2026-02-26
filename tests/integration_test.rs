@@ -391,6 +391,67 @@ fn test_cache_hit_miss() {
 }
 
 #[test]
+fn test_compilation_metrics_extra_fields() {
+    // cache_hit_miss.log has compilation_metrics entries with extra fields
+    // not explicitly in CompilationMetricsMetadata (e.g. dynamo_config, is_forward, etc.)
+    // Verify those extra fields appear in the "Other Metrics" section of the output HTML.
+    let path = Path::new("tests/inputs/cache_hit_miss.log").to_path_buf();
+    let config = tlparse::ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config);
+    assert!(output.is_ok());
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // Find the compilation_metrics HTML file
+    let metrics_html = map
+        .iter()
+        .find(|(k, _)| {
+            k.to_str()
+                .map_or(false, |s| s.contains("compilation_metrics"))
+        })
+        .unwrap_or_else(|| {
+            let keys: Vec<_> = map.keys().map(|k| k.display().to_string()).collect();
+            panic!(
+                "compilation_metrics not found in output. Available keys: {:?}",
+                keys
+            );
+        });
+
+    let html = metrics_html.1;
+
+    // These keys exist in the log's compilation_metrics JSON but are NOT explicit
+    // fields in CompilationMetricsMetadata, so they should be captured via #[serde(flatten)]
+    // and rendered in the "Other Metrics" section.
+    let expected_extra_keys = [
+        "aot_autograd_cumulative_compile_time_us",
+        "config_inline_inbuilt_nn_modules",
+        "config_suppress_errors",
+        "dynamo_compile_time_before_restart_us",
+        "dynamo_config",
+        "dynamo_cumulative_compile_time_us",
+        "frame_key",
+        "has_guarded_code",
+        "is_forward",
+        "specialize_float",
+    ];
+
+    assert!(
+        html.contains("Other Metrics"),
+        "Expected 'Other Metrics' section in compilation_metrics.html"
+    );
+
+    for key in expected_extra_keys {
+        assert!(
+            html.contains(key),
+            "Expected extra key '{}' in compilation_metrics.html",
+            key
+        );
+    }
+}
+
+#[test]
 fn test_export_report() {
     let expected_files = [
         "-_-_-_-/exported_program",
