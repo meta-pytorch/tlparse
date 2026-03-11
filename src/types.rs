@@ -340,8 +340,8 @@ pub fn simplify_filename<'a>(filename: &'a str) -> &'a str {
     if parts.len() > 1 {
         return parts[1];
     }
-    let re = Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap();
-    if let Some(captures) = re.captures(filename) {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap());
+    if let Some(captures) = RE.captures(filename) {
         if let Some(capture) = captures.get(0) {
             return &filename[capture.end()..];
         }

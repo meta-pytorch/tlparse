@@ -1,5 +1,6 @@
 use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::{types::*, ParseConfig};
+use fxhash::FxHashMap;
 use html_escape::encode_text;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -20,8 +21,22 @@ fn format_json_pretty(payload: &str) -> Result<String, anyhow::Error> {
     }
 }
 
+use std::sync::OnceLock;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
+
+struct SyntectResources {
+    syntax_set: SyntaxSet,
+    theme_set: ThemeSet,
+}
+
+fn syntect_resources() -> &'static SyntectResources {
+    static RESOURCES: OnceLock<SyntectResources> = OnceLock::new();
+    RESOURCES.get_or_init(|| SyntectResources {
+        syntax_set: SyntaxSet::load_defaults_newlines(),
+        theme_set: ThemeSet::load_defaults(),
+    })
+}
 
 // Re-export types from types.rs for external use
 pub use crate::types::{CompileId, EmptyMetadata, Envelope, GraphRuntime, Metadata, OpRuntime};
@@ -311,14 +326,13 @@ impl StructuredLogParser for InductorOutputCodeParser {
 }
 
 fn generate_html_output(payload: &str) -> Result<String, anyhow::Error> {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
-    let theme_set = ThemeSet::load_defaults();
-    let syntax = syntax_set.find_syntax_by_extension("py").unwrap();
+    let res = syntect_resources();
+    let syntax = res.syntax_set.find_syntax_by_extension("py").unwrap();
     let html = syntect::html::highlighted_html_for_string(
         &payload,
-        &syntax_set,
+        &res.syntax_set,
         &syntax,
-        &theme_set.themes["InspiredGitHub"],
+        &res.theme_set.themes["InspiredGitHub"],
     );
     Ok(html?)
 }
@@ -385,6 +399,23 @@ fn format_stack(stack: &StackSummary, caption: &str, open: bool) -> String {
     trie.fmt(None, caption, open).unwrap()
 }
 
+// HashMap requires cloning the key for tuple lookups. If this becomes a perf
+// bottleneck, switch to a 2-level cache (FxHashMap<StackSummary, FxHashMap<String, String>>)
+// which wouldn't require cloning the key.
+fn format_stack_cached(
+    cache: &mut FxHashMap<(StackSummary, String), String>,
+    stack: &StackSummary,
+    caption: &str,
+) -> String {
+    let key = (stack.clone(), caption.to_string());
+    if let Some(cached) = cache.get(&key) {
+        return cached.clone();
+    }
+    let result = format_stack(stack, caption, false);
+    cache.insert(key, result.clone());
+    result
+}
+
 pub struct CompilationMetricsParser<'t> {
     pub tt: &'t TinyTemplate<'t>,
     pub stack_index: &'t RefCell<StackIndex>,
@@ -413,6 +444,7 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
         _payload: &str,
     ) -> anyhow::Result<ParserResults> {
         let filename = format!("{}.html", self.name());
+        let mut stack_cache: FxHashMap<(StackSummary, String), String> = FxHashMap::default();
         if let Metadata::CompilationMetrics(m) = metrics {
             let id = compile_id
                 .clone()
@@ -446,90 +478,106 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
             } else {
                 "".to_string()
             };
-            let specializations = self
+            let specializations: Vec<_> = self
                 .symbolic_shape_specialization_index
                 .borrow_mut()
                 .remove(&cid)
-                .unwrap_or(Vec::new())
+                .unwrap_or_default()
                 .drain(..)
-                .map(|spec| SymbolicShapeSpecializationContext {
-                    symbol: spec.symbol.unwrap_or("".to_string()),
-                    sources: spec.sources.unwrap_or(Vec::new()),
-                    value: spec.value.unwrap_or("".to_string()),
-                    user_stack_html: format_stack(
-                        &spec.user_stack.unwrap_or(Vec::new()),
-                        "User Stack",
-                        false,
-                    ),
-                    stack_html: format_stack(
-                        &spec.stack.unwrap_or(Vec::new()),
-                        "Framework Stack",
-                        false,
-                    ),
+                .map(|spec| {
+                    let user_stack = spec.user_stack.unwrap_or_default();
+                    let stack = spec.stack.unwrap_or_default();
+                    SymbolicShapeSpecializationContext {
+                        symbol: spec.symbol.unwrap_or("".to_string()),
+                        sources: spec.sources.unwrap_or_default(),
+                        value: spec.value.unwrap_or("".to_string()),
+                        user_stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &user_stack,
+                            "User Stack",
+                        ),
+                        stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &stack,
+                            "Framework Stack",
+                        ),
+                    }
                 })
                 .collect();
-            let guards_added_fast = self
+            let guards_added_fast: Vec<_> = self
                 .guard_added_fast_index
                 .borrow_mut()
                 .remove(&cid)
-                .unwrap_or(Vec::new())
+                .unwrap_or_default()
                 .drain(..)
-                .map(|guard| GuardAddedFastContext {
-                    expr: guard.expr.unwrap_or("".to_string()),
-                    user_stack_html: format_stack(
-                        &guard.user_stack.unwrap_or(Vec::new()),
-                        "User Stack",
-                        false,
-                    ),
-                    stack_html: format_stack(
-                        &guard.stack.unwrap_or(Vec::new()),
-                        "Framework Stack",
-                        false,
-                    ),
+                .map(|guard| {
+                    let user_stack = guard.user_stack.unwrap_or_default();
+                    let stack = guard.stack.unwrap_or_default();
+                    GuardAddedFastContext {
+                        expr: guard.expr.unwrap_or("".to_string()),
+                        user_stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &user_stack,
+                            "User Stack",
+                        ),
+                        stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &stack,
+                            "Framework Stack",
+                        ),
+                    }
                 })
                 .collect();
-            let create_symbols = self
+            let create_symbols: Vec<_> = self
                 .create_symbol_index
                 .borrow_mut()
                 .remove(&cid)
-                .unwrap_or(Vec::new())
+                .unwrap_or_default()
                 .drain(..)
-                .map(|sym| CreateSymbolContext {
-                    symbol: sym.symbol.unwrap_or("".to_string()),
-                    val: sym.val.unwrap_or("".to_string()),
-                    vr: sym.vr.unwrap_or("".to_string()),
-                    source: sym.source.unwrap_or("".to_string()),
-                    user_stack_html: format_stack(
-                        &sym.user_stack.unwrap_or(Vec::new()),
-                        "User Stack",
-                        false,
-                    ),
-                    stack_html: format_stack(
-                        &sym.stack.unwrap_or(Vec::new()),
-                        "Framework Stack",
-                        false,
-                    ),
+                .map(|sym| {
+                    let user_stack = sym.user_stack.unwrap_or_default();
+                    let stack = sym.stack.unwrap_or_default();
+                    CreateSymbolContext {
+                        symbol: sym.symbol.unwrap_or("".to_string()),
+                        val: sym.val.unwrap_or("".to_string()),
+                        vr: sym.vr.unwrap_or("".to_string()),
+                        source: sym.source.unwrap_or("".to_string()),
+                        user_stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &user_stack,
+                            "User Stack",
+                        ),
+                        stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &stack,
+                            "Framework Stack",
+                        ),
+                    }
                 })
                 .collect();
-            let unbacked_symbols = self
+            let unbacked_symbols: Vec<_> = self
                 .unbacked_symbol_index
                 .borrow_mut()
                 .remove(&cid)
-                .unwrap_or(Vec::new())
+                .unwrap_or_default()
                 .drain(..)
-                .map(|sym| UnbackedSymbolContext {
-                    symbol: sym.symbol.unwrap_or("".to_string()),
-                    vr: sym.vr.unwrap_or("".to_string()),
-                    user_stack_html: format_stack(
-                        &sym.user_stack.unwrap_or(Vec::new()),
-                        "User Stack",
-                        false,
-                    ),
-                    stack_html: format_stack(
-                        &sym.stack.unwrap_or(Vec::new()),
-                        "Framework Stack",
-                        false,
-                    ),
+                .map(|sym| {
+                    let user_stack = sym.user_stack.unwrap_or_default();
+                    let stack = sym.stack.unwrap_or_default();
+                    UnbackedSymbolContext {
+                        symbol: sym.symbol.unwrap_or("".to_string()),
+                        vr: sym.vr.unwrap_or("".to_string()),
+                        user_stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &user_stack,
+                            "User Stack",
+                        ),
+                        stack_html: format_stack_cached(
+                            &mut stack_cache,
+                            &stack,
+                            "Framework Stack",
+                        ),
+                    }
                 })
                 .collect();
             let remove_prefix = |x: &String| -> String {
