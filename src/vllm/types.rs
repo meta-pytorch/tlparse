@@ -54,13 +54,28 @@ impl VllmSubgraphInfo {
     }
 }
 
+/// Represents a single torch.compile call within a vLLM run.
+/// Each compile call starts with a `vllm_compilation_config` artifact.
+#[derive(Debug, Default)]
+pub struct VllmCompileCall {
+    pub index: usize,
+    pub config: Option<VllmCompilationConfig>,
+    pub piecewise_graph_file: Option<String>,
+    pub subgraphs: Vec<VllmSubgraphInfo>,
+    pub pre_subgraph_artifacts: Vec<ArtifactInfo>,
+    /// "aot_cache_hit" or "fresh_compile", from vllm_compile_event artifact
+    pub compile_event_type: Option<String>,
+}
+
+/// Template context for a single compile call.
 #[derive(Debug, Serialize)]
-pub struct VllmSummaryContext {
-    pub css: String,
-    pub qps: String,
-    pub custom_header_html: String,
-    pub config: VllmCompilationConfig,
+pub struct VllmCompileCallContext {
+    pub display_index: usize,
+    pub label: String,
+    pub is_first: bool,
+    pub is_cache_hit: bool,
     pub has_config: bool,
+    pub config: VllmCompilationConfig,
     pub dynamo_artifacts: Vec<ArtifactInfo>,
     pub has_dynamo_artifacts: bool,
     pub pattern_artifacts: Vec<ArtifactInfo>,
@@ -68,6 +83,17 @@ pub struct VllmSummaryContext {
     pub piecewise_graph_file: Option<String>,
     pub has_piecewise: bool,
     pub compile_range_groups: Vec<VllmCompileRangeGroup>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VllmSummaryContext {
+    pub css: String,
+    pub qps: String,
+    pub custom_header_html: String,
+    pub compile_calls: Vec<VllmCompileCallContext>,
+    pub has_multiple_calls: bool,
+    pub has_shared_config: bool,
+    pub shared_config: VllmCompilationConfig,
 }
 
 #[derive(Debug, Serialize)]
