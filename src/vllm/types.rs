@@ -10,12 +10,23 @@ pub struct VllmCompilationConfig {
     pub splitting_ops: Option<String>,
     pub cudagraph_mode: Option<String>,
     pub compile_sizes: Option<String>,
+    /// Accepts both old name (compile_ranges_split_points) and new name (compile_ranges_endpoints).
     pub compile_ranges_split_points: Option<String>,
+    pub compile_ranges_endpoints: Option<String>,
     pub use_inductor_graph_partition: Option<bool>,
     pub inductor_passes: Option<String>,
     pub enabled_passes: Option<String>,
     pub dynamic_shapes_type: Option<String>,
     pub dynamic_shapes_evaluate_guards: Option<bool>,
+}
+
+impl VllmCompilationConfig {
+    /// Returns the compile ranges value, preferring endpoints (new name) over split_points (old).
+    pub fn compile_ranges(&self) -> Option<&String> {
+        self.compile_ranges_endpoints
+            .as_ref()
+            .or(self.compile_ranges_split_points.as_ref())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -52,18 +63,43 @@ impl VllmSubgraphInfo {
     }
 }
 
+/// Represents a single torch.compile call within a vLLM run.
+/// Each compile call starts with a `vllm_compilation_config` artifact.
+#[derive(Debug, Default)]
+pub struct VllmCompileCall {
+    pub index: usize,
+    pub config: Option<VllmCompilationConfig>,
+    pub piecewise_graph_file: Option<String>,
+    pub subgraphs: Vec<VllmSubgraphInfo>,
+    pub pre_subgraph_artifacts: Vec<ArtifactInfo>,
+}
+
+/// Template context for a single compile call.
+#[derive(Debug, Serialize)]
+pub struct VllmCompileCallContext {
+    pub display_index: usize,
+    pub label: String,
+    pub is_first: bool,
+    pub has_config: bool,
+    pub config: VllmCompilationConfig,
+    pub dynamo_artifacts: Vec<ArtifactInfo>,
+    pub has_dynamo_artifacts: bool,
+    pub pattern_artifacts: Vec<ArtifactInfo>,
+    pub has_pattern_artifacts: bool,
+    pub piecewise_graph_file: Option<String>,
+    pub has_piecewise: bool,
+    pub compile_range_groups: Vec<VllmCompileRangeGroup>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct VllmSummaryContext {
     pub css: String,
     pub qps: String,
     pub custom_header_html: String,
-    pub config: VllmCompilationConfig,
-    pub has_config: bool,
-    pub dynamo_artifacts: Vec<ArtifactInfo>,
-    pub has_dynamo_artifacts: bool,
-    pub piecewise_graph_file: Option<String>,
-    pub has_piecewise: bool,
-    pub compile_range_groups: Vec<VllmCompileRangeGroup>,
+    pub compile_calls: Vec<VllmCompileCallContext>,
+    pub has_multiple_calls: bool,
+    pub has_shared_config: bool,
+    pub shared_config: VllmCompilationConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +107,9 @@ pub struct VllmSubgraphWithArtifacts {
     pub submod_name: String,
     pub artifacts: Vec<ArtifactInfo>,
     pub artifact_count: usize,
+    pub pass_artifacts: Vec<ArtifactInfo>,
+    pub pass_artifact_count: usize,
+    pub has_pass_artifacts: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +117,16 @@ pub struct VllmCompileRangeGroup {
     pub size_or_range: String,
     pub submod_count: usize,
     pub submods: Vec<VllmSubgraphWithArtifacts>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VllmDiffContext {
+    pub css: String,
+    pub pass_name: String,
+    pub diff_html: String,
+    pub patterns_html: String,
+    pub has_patterns: bool,
+    pub qps: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

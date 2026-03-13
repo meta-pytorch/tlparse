@@ -133,6 +133,97 @@ h3 {
 }
 "#;
 
+pub const VLLM_DIFF_TEMPLATE: &str = r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pass Diff: {pass_name}</title>
+    <style>
+{css | format_unescaped}
+.diff-wrapper \{
+    overflow-x: auto;
+    margin: 15px 0;
+    border: 1px solid #d0d7de;
+    border-radius: 5px;
+}
+.diff-table \{
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    background: white;
+}
+.diff-table col.line-num-col \{
+    width: 40px;
+}
+.diff-table col.code-col \{
+    width: calc(50% - 40px);
+}
+.diff-table td \{
+    white-space: pre-wrap;
+    word-break: break-all;
+    padding: 1px 8px;
+    vertical-align: top;
+}
+.diff-table .line-num \{
+    white-space: nowrap;
+    text-align: right;
+    color: #8b949e;
+    padding: 1px 4px;
+    user-select: none;
+    overflow: visible;
+}
+.diff-table .right-num \{
+    border-left: 1px solid #d0d7de;
+}
+.diff-add \{
+    background: #e6ffec;
+}
+.diff-del \{
+    background: #ffebe9;
+}
+.diff-hunk \{
+    background: #ddf4ff;
+}
+.diff-hunk td \{
+    color: #0969da;
+    font-weight: bold;
+    padding: 5px 8px;
+}
+.no-changes \{
+    padding: 20px;
+    text-align: center;
+    color: #57606a;
+}
+.patterns-code \{
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    background: #f6f8fa;
+    padding: 16px;
+    border: 1px solid #d0d7de;
+    border-radius: 5px;
+    overflow-x: auto;
+    white-space: pre;
+}
+    </style>
+</head>
+<body>
+    <h1>Pass Diff: {pass_name}</h1>
+{diff_html | format_unescaped}
+{{ if has_patterns }}
+    <details>
+        <summary><h2 style="display:inline">Patterns</h2></summary>
+        <pre class="patterns-code">{patterns_html | format_unescaped}</pre>
+    </details>
+{{ endif }}
+{qps | format_unescaped}
+</body>
+</html>
+"#;
+
 pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
 <html>
 <head>
@@ -140,6 +231,40 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
     <title>vLLM Compilation Summary</title>
     <style>
 {css | format_unescaped}
+.compile-call-section \{
+    margin: 20px 0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fafafa;
+\}
+.compile-call-section > summary \{
+    cursor: pointer;
+    padding: 12px 16px;
+    list-style: none;
+    border-radius: 8px;
+\}
+.compile-call-section > summary::-webkit-details-marker \{
+    display: none;
+\}
+.compile-call-section > summary::before \{
+    content: "▶ ";
+    font-size: 0.8em;
+    margin-right: 4px;
+\}
+.compile-call-section[open] > summary::before \{
+    content: "▼ ";
+\}
+.compile-call-section > summary:hover \{
+    background: #e8f4fd;
+\}
+.compile-call-section > summary h2 \{
+    display: inline;
+    margin: 0;
+    font-size: 1.2em;
+\}
+.compile-call-body \{
+    padding: 0 20px 20px 20px;
+\}
     </style>
 </head>
 <body>
@@ -149,30 +274,30 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
     </div>
     <h1>vLLM Compilation Summary</h1>
 
-    {{ if has_config }}
-    <h2>Compilation Configuration</h2>
+    {{ if has_shared_config }}
+    <h2>Compilation Configuration (shared)</h2>
     <details open>
         <summary><strong>Core Settings</strong></summary>
         <table class="config-table">
-            <tr><td><strong>Model</strong></td><td>{config.model}</td></tr>
-            <tr><td><strong>Mode</strong></td><td>{config.mode}</td></tr>
-            <tr><td><strong>Backend</strong></td><td>{config.backend}</td></tr>
-            <tr><td><strong>Prefix</strong></td><td>{config.prefix}</td></tr>
-            <tr><td><strong>Custom Ops</strong></td><td>{config.custom_ops}</td></tr>
-            <tr><td><strong>Splitting Ops</strong></td><td>{config.splitting_ops}</td></tr>
+            <tr><td><strong>Model</strong></td><td>{shared_config.model}</td></tr>
+            <tr><td><strong>Mode</strong></td><td>{shared_config.mode}</td></tr>
+            <tr><td><strong>Backend</strong></td><td>{shared_config.backend}</td></tr>
+            <tr><td><strong>Prefix</strong></td><td>{shared_config.prefix}</td></tr>
+            <tr><td><strong>Custom Ops</strong></td><td>{shared_config.custom_ops}</td></tr>
+            <tr><td><strong>Splitting Ops</strong></td><td>{shared_config.splitting_ops}</td></tr>
         </table>
     </details>
     <details open>
         <summary><strong>Compile Settings</strong></summary>
         <table class="config-table">
-            <tr><td><strong>CUDAGraph Mode</strong></td><td>{config.cudagraph_mode}</td></tr>
-            <tr><td><strong>Use Inductor Graph Partition</strong></td><td>{config.use_inductor_graph_partition}</td></tr>
-            <tr><td><strong>Compile Sizes</strong></td><td>{config.compile_sizes}</td></tr>
-            <tr><td><strong>Compile Ranges Split Points</strong></td><td>{config.compile_ranges_split_points}</td></tr>
-            <tr><td><strong>Inductor Passes</strong></td><td>{config.inductor_passes}</td></tr>
-            <tr><td><strong>Enabled Passes</strong></td><td>{config.enabled_passes}</td></tr>
-            <tr><td><strong>Dynamic Shapes Type</strong></td><td>{config.dynamic_shapes_type}</td></tr>
-            <tr><td><strong>Dynamic Shapes Evaluate Guards</strong></td><td>{config.dynamic_shapes_evaluate_guards}</td></tr>
+            <tr><td><strong>CUDAGraph Mode</strong></td><td>{shared_config.cudagraph_mode}</td></tr>
+            <tr><td><strong>Use Inductor Graph Partition</strong></td><td>{shared_config.use_inductor_graph_partition}</td></tr>
+            <tr><td><strong>Compile Sizes</strong></td><td>{shared_config.compile_sizes}</td></tr>
+            <tr><td><strong>Compile Ranges Endpoints</strong></td><td>{shared_config.compile_ranges_split_points}</td></tr>
+            <tr><td><strong>Inductor Passes</strong></td><td>{shared_config.inductor_passes}</td></tr>
+            <tr><td><strong>Enabled Passes</strong></td><td>{shared_config.enabled_passes}</td></tr>
+            <tr><td><strong>Dynamic Shapes Type</strong></td><td>{shared_config.dynamic_shapes_type}</td></tr>
+            <tr><td><strong>Dynamic Shapes Evaluate Guards</strong></td><td>{shared_config.dynamic_shapes_evaluate_guards}</td></tr>
         </table>
     </details>
     {{ endif }}
@@ -182,29 +307,76 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
         You can download and view them in a tool like <a href="https://ui.perfetto.dev/">Perfetto</a>.</p>
     </div>
 
-    {{ if has_dynamo_artifacts }}
+    {{ for call in compile_calls }}
+    {{ if has_multiple_calls }}
+    <details class="compile-call-section" {{ if call.is_first }}open{{ endif }}>
+        <summary><h2>Compile Call {call.display_index}{{ if call.label }}: {call.label}{{ endif }}</h2></summary>
+        <div class="compile-call-body">
+    {{ endif }}
+
+    {{ if call.has_config }}
+    <h2>Compilation Configuration</h2>
+    <details open>
+        <summary><strong>Core Settings</strong></summary>
+        <table class="config-table">
+            <tr><td><strong>Model</strong></td><td>{call.config.model}</td></tr>
+            <tr><td><strong>Mode</strong></td><td>{call.config.mode}</td></tr>
+            <tr><td><strong>Backend</strong></td><td>{call.config.backend}</td></tr>
+            <tr><td><strong>Prefix</strong></td><td>{call.config.prefix}</td></tr>
+            <tr><td><strong>Custom Ops</strong></td><td>{call.config.custom_ops}</td></tr>
+            <tr><td><strong>Splitting Ops</strong></td><td>{call.config.splitting_ops}</td></tr>
+        </table>
+    </details>
+    <details open>
+        <summary><strong>Compile Settings</strong></summary>
+        <table class="config-table">
+            <tr><td><strong>CUDAGraph Mode</strong></td><td>{call.config.cudagraph_mode}</td></tr>
+            <tr><td><strong>Use Inductor Graph Partition</strong></td><td>{call.config.use_inductor_graph_partition}</td></tr>
+            <tr><td><strong>Compile Sizes</strong></td><td>{call.config.compile_sizes}</td></tr>
+            <tr><td><strong>Compile Ranges Endpoints</strong></td><td>{call.config.compile_ranges_split_points}</td></tr>
+            <tr><td><strong>Inductor Passes</strong></td><td>{call.config.inductor_passes}</td></tr>
+            <tr><td><strong>Enabled Passes</strong></td><td>{call.config.enabled_passes}</td></tr>
+            <tr><td><strong>Dynamic Shapes Type</strong></td><td>{call.config.dynamic_shapes_type}</td></tr>
+            <tr><td><strong>Dynamic Shapes Evaluate Guards</strong></td><td>{call.config.dynamic_shapes_evaluate_guards}</td></tr>
+        </table>
+    </details>
+    {{ endif }}
+
+    {{ if call.has_dynamo_artifacts }}
     <h2>Dynamo Compilation</h2>
     <div class="summary-box">
         <ul class="artifact-list">
-        {{ for artifact in dynamo_artifacts }}
+        {{ for artifact in call.dynamo_artifacts }}
             <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
         {{ endfor }}
         </ul>
     </div>
     {{ endif }}
 
-    {{ if has_piecewise }}
+    {{ if call.has_piecewise }}
     <h2>Piecewise Split Graph</h2>
     <div class="summary-box">
         <ul class="artifact-list">
-            <li><a href="{piecewise_graph_file}">vllm_piecewise_split_graph</a></li>
+            <li><a href="{call.piecewise_graph_file}">vllm_piecewise_split_graph</a></li>
         </ul>
     </div>
     {{ endif }}
 
+    {{ if call.has_pattern_artifacts }}
+    <h2>Inductor Pass Patterns</h2>
+    <div class="summary-box">
+        <ul class="artifact-list">
+        {{ for artifact in call.pattern_artifacts }}
+            <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
+        {{ endfor }}
+        </ul>
+    </div>
+    {{ endif }}
+
+    {{ if call.compile_range_groups }}
     <h2>Inductor Compilation</h2>
 
-    {{ for group in compile_range_groups }}
+    {{ for group in call.compile_range_groups }}
     <div class="compile-range-group">
         <h3>{group.size_or_range}</h3>
 
@@ -225,10 +397,29 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
                     </details>
                 </div>
                 {{ endif }}
+                {{ if subgraph.has_pass_artifacts }}
+                <div class="artifact-section">
+                    <details>
+                        <summary>Inductor Pass Graphs &amp; Diffs ({subgraph.pass_artifact_count} files)</summary>
+                        <ul class="artifact-list">
+                        {{ for artifact in subgraph.pass_artifacts }}
+                            <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
+                        {{ endfor }}
+                        </ul>
+                    </details>
+                </div>
+                {{ endif }}
             </div>
             {{ endfor }}
         </details>
     </div>
+    {{ endfor }}
+    {{ endif }}
+
+    {{ if has_multiple_calls }}
+        </div>
+    </details>
+    {{ endif }}
     {{ endfor }}
 {qps | format_unescaped}
 </body>
