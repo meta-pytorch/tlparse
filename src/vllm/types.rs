@@ -10,7 +10,9 @@ pub struct VllmCompilationConfig {
     pub splitting_ops: Option<String>,
     pub cudagraph_mode: Option<String>,
     pub compile_sizes: Option<String>,
+    /// Accepts both old name (compile_ranges_split_points) and new name (compile_ranges_endpoints).
     pub compile_ranges_split_points: Option<String>,
+    pub compile_ranges_endpoints: Option<String>,
     pub use_inductor_graph_partition: Option<bool>,
     pub inductor_passes: Option<String>,
     pub enabled_passes: Option<String>,

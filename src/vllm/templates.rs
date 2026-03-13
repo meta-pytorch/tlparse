@@ -168,7 +168,7 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
             <tr><td><strong>CUDAGraph Mode</strong></td><td>{config.cudagraph_mode}</td></tr>
             <tr><td><strong>Use Inductor Graph Partition</strong></td><td>{config.use_inductor_graph_partition}</td></tr>
             <tr><td><strong>Compile Sizes</strong></td><td>{config.compile_sizes}</td></tr>
-            <tr><td><strong>Compile Ranges Split Points</strong></td><td>{config.compile_ranges_split_points}</td></tr>
+            <tr><td><strong>Compile Ranges Endpoints</strong></td><td>{config.compile_ranges_split_points}</td></tr>
             <tr><td><strong>Inductor Passes</strong></td><td>{config.inductor_passes}</td></tr>
             <tr><td><strong>Enabled Passes</strong></td><td>{config.enabled_passes}</td></tr>
             <tr><td><strong>Dynamic Shapes Type</strong></td><td>{config.dynamic_shapes_type}</td></tr>

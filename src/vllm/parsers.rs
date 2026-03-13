@@ -258,12 +258,22 @@ pub fn vllm_parsers_with_state(state: Rc<VllmState>) -> Vec<Box<dyn StructuredLo
     ]
 }
 
+fn normalize_config(config: &VllmCompilationConfig) -> VllmCompilationConfig {
+    let mut config = config.clone();
+    if config.compile_ranges_split_points.is_none() {
+        if let Some(ref endpoints) = config.compile_ranges_endpoints {
+            config.compile_ranges_split_points = Some(endpoints.clone());
+        }
+    }
+    config
+}
+
 pub fn generate_vllm_summary(
     state: &VllmState,
     tt: &TinyTemplate,
     custom_header_html: &str,
 ) -> anyhow::Result<String> {
-    let config = state.config.borrow().clone().unwrap_or_default();
+    let config = state.config.borrow().as_ref().map(|c| normalize_config(c)).unwrap_or_default();
     let dynamo_artifacts = state.build_dynamo_artifacts();
     let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
     let piecewise_graph_file = state.piecewise_graph_file.borrow().clone();
