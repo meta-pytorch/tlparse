@@ -62,14 +62,24 @@ impl VllmState {
 
         for subgraph in subgraphs.iter() {
             let size_or_range = subgraph.size_or_range();
-            let artifact_count = subgraph.artifacts.len();
+            let (pass_artifacts, artifacts): (Vec<_>, Vec<_>) = subgraph
+                .artifacts
+                .iter()
+                .cloned()
+                .partition(|a| a.name.contains("vllm_post_grad."));
+            let artifact_count = artifacts.len();
+            let pass_artifact_count = pass_artifacts.len();
+            let has_pass_artifacts = pass_artifact_count > 0;
             groups
                 .entry(size_or_range)
                 .or_default()
                 .push(VllmSubgraphWithArtifacts {
                     submod_name: subgraph.display_submod_name(),
-                    artifacts: subgraph.artifacts.clone(),
+                    artifacts,
                     artifact_count,
+                    pass_artifacts,
+                    pass_artifact_count,
+                    has_pass_artifacts,
                 });
         }
 
@@ -80,6 +90,16 @@ impl VllmState {
                 submod_count: submods.len(),
                 submods,
             })
+            .collect()
+    }
+
+    // Get pattern artifacts from pre_subgraph_artifacts
+    pub fn build_pattern_artifacts(&self) -> Vec<ArtifactInfo> {
+        self.pre_subgraph_artifacts
+            .borrow()
+            .iter()
+            .filter(|a| a.name.starts_with("vllm_patterns."))
+            .cloned()
             .collect()
     }
 
@@ -256,7 +276,10 @@ impl StructuredLogParser for VllmPiecewiseSplitGraphParser {
 //   1. "before_post_grad_graph" artifact — the graph before any passes run.
 //      Stored as the diff baseline; no file output (ArtifactParser handles that).
 //
-//   2. "vllm_post_grad.<index>.<PassName>" graph dump — the graph after a pass.
+//   2. "vllm_patterns.<PassName>" graph dump — pattern matcher patterns.
+//      Output as a standalone .py file (no diffing).
+//
+//   3. "vllm_post_grad.<index>.<PassName>" graph dump — the graph after a pass.
 //      Diffed against `previous_payload` to produce a side-by-side HTML diff,
 //      then becomes the new baseline for the next pass.
 pub struct VllmPostGradPassDiffParser {
@@ -405,7 +428,9 @@ impl StructuredLogParser for VllmPostGradPassDiffParser {
 
     fn get_metadata<'e>(&self, e: &'e Envelope) -> Option<Metadata<'e>> {
         if let Some(graph_dump) = &e.graph_dump {
-            if graph_dump.name.starts_with("vllm_post_grad.") {
+            if graph_dump.name.starts_with("vllm_post_grad.")
+                || graph_dump.name.starts_with("vllm_patterns.")
+            {
                 return Some(Metadata::GraphDump(graph_dump));
             }
         }
@@ -438,6 +463,13 @@ impl StructuredLogParser for VllmPostGradPassDiffParser {
         };
 
         *self.state.has_vllm_artifacts.borrow_mut() = true;
+
+        // Handle vllm_patterns.* graph dumps: output as standalone .py file
+        if graph_dump.name.starts_with("vllm_patterns.") {
+            let filename = format!("{}.py", graph_dump.name);
+            let f = build_file_path(&filename, lineno, compile_id);
+            return Ok(vec![ParserOutput::PayloadFile(f)]);
+        }
 
         // e.g. "vllm_post_grad.0.FusionPass" -> pass_name = "0.FusionPass"
         let pass_name = graph_dump
@@ -507,6 +539,8 @@ pub fn generate_vllm_summary(
     let config = state.config.borrow().as_ref().map(|c| normalize_config(c)).unwrap_or_default();
     let dynamo_artifacts = state.build_dynamo_artifacts();
     let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
+    let pattern_artifacts = state.build_pattern_artifacts();
+    let has_pattern_artifacts = !pattern_artifacts.is_empty();
     let piecewise_graph_file = state.piecewise_graph_file.borrow().clone();
     let has_piecewise = piecewise_graph_file.is_some();
     let compile_range_groups = state.build_compile_range_groups();
@@ -519,6 +553,8 @@ pub fn generate_vllm_summary(
         config,
         dynamo_artifacts,
         has_dynamo_artifacts,
+        pattern_artifacts,
+        has_pattern_artifacts,
         piecewise_graph_file,
         has_piecewise,
         compile_range_groups,
