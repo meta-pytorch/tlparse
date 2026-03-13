@@ -1,0 +1,14 @@
+V0127 17:17:45.175000 1175001 torch/foo.py:100] {"artifact": {"name": "before_post_grad_graph", "encoding": "string"}, "rank": 0, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "e830dc536dd44eda7a0b9e5b2440b620"}
+	def forward(self, x):
+	    a = torch.sin(x)
+	    b = torch.cos(x)
+	    return a + b
+V0127 17:17:45.275000 1175001 torch/foo.py:200] {"graph_dump": {"name": "vllm_post_grad.0.FusionPass"}, "rank": 0, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "10a31f5a0aed872193545914468c4662"}
+	def forward(self, x):
+	    fused_sincos = torch.ops.fused_sincos(x)
+	    return fused_sincos
+V0127 17:17:45.475000 1175001 torch/foo.py:400] {"graph_dump": {"name": "vllm_post_grad.1.ReshapePass"}, "rank": 0, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "98779deb5e4138055f082b7a744f1c6a"}
+	def forward(self, x):
+	    fused_sincos = torch.ops.fused_sincos(x)
+	    y = fused_sincos.reshape(-1)
+	    return y
