@@ -133,6 +133,80 @@ h3 {
 }
 "#;
 
+pub const VLLM_DIFF_TEMPLATE: &str = r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pass Diff: {pass_name}</title>
+    <style>
+{css | format_unescaped}
+.diff-wrapper \{
+    overflow-x: auto;
+    margin: 15px 0;
+    border: 1px solid #d0d7de;
+    border-radius: 5px;
+}
+.diff-table \{
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    background: white;
+}
+.diff-table col.line-num-col \{
+    width: 40px;
+}
+.diff-table col.code-col \{
+    width: calc(50% - 40px);
+}
+.diff-table td \{
+    white-space: pre-wrap;
+    word-break: break-all;
+    padding: 1px 8px;
+    vertical-align: top;
+}
+.diff-table .line-num \{
+    white-space: nowrap;
+    text-align: right;
+    color: #8b949e;
+    padding: 1px 4px;
+    user-select: none;
+    overflow: visible;
+}
+.diff-table .right-num \{
+    border-left: 1px solid #d0d7de;
+}
+.diff-add \{
+    background: #e6ffec;
+}
+.diff-del \{
+    background: #ffebe9;
+}
+.diff-hunk \{
+    background: #ddf4ff;
+}
+.diff-hunk td \{
+    color: #0969da;
+    font-weight: bold;
+    padding: 5px 8px;
+}
+.no-changes \{
+    padding: 20px;
+    text-align: center;
+    color: #57606a;
+}
+    </style>
+</head>
+<body>
+    <h1>Pass Diff: {pass_name}</h1>
+{diff_html | format_unescaped}
+{qps | format_unescaped}
+</body>
+</html>
+"#;
+
 pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
 <html>
 <head>
