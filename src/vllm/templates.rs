@@ -276,6 +276,17 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
     </div>
     {{ endif }}
 
+    {{ if has_pattern_artifacts }}
+    <h2>Inductor Pass Patterns</h2>
+    <div class="summary-box">
+        <ul class="artifact-list">
+        {{ for artifact in pattern_artifacts }}
+            <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
+        {{ endfor }}
+        </ul>
+    </div>
+    {{ endif }}
+
     <h2>Inductor Compilation</h2>
 
     {{ for group in compile_range_groups }}
@@ -293,6 +304,18 @@ pub const VLLM_SUMMARY_TEMPLATE: &str = r#"<!DOCTYPE html>
                         <summary>Artifacts ({subgraph.artifact_count} files)</summary>
                         <ul class="artifact-list">
                         {{ for artifact in subgraph.artifacts }}
+                            <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
+                        {{ endfor }}
+                        </ul>
+                    </details>
+                </div>
+                {{ endif }}
+                {{ if subgraph.has_pass_artifacts }}
+                <div class="artifact-section">
+                    <details>
+                        <summary>Inductor Pass Graphs &amp; Diffs ({subgraph.pass_artifact_count} files)</summary>
+                        <ul class="artifact-list">
+                        {{ for artifact in subgraph.pass_artifacts }}
                             <li><a href="{artifact.url}">{artifact.name}</a> {artifact.suffix}</li>
                         {{ endfor }}
                         </ul>
