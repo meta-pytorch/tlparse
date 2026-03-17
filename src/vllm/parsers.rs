@@ -3,8 +3,8 @@ use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::types::{CompileId, Envelope};
 
 use super::types::{
-    ArtifactInfo, VllmCompileCall, VllmCompileCallContext, VllmCompileRangeGroup,
-    VllmCompilationConfig, VllmDiffContext, VllmSubgraphInfo, VllmSubgraphWithArtifacts,
+    ArtifactInfo, VllmCompilationConfig, VllmCompileCall, VllmCompileCallContext,
+    VllmCompileRangeGroup, VllmDiffContext, VllmSubgraphInfo, VllmSubgraphWithArtifacts,
     VllmSummaryContext,
 };
 
@@ -444,9 +444,8 @@ impl VllmPostGradPassDiffParser {
                 match changes[i].tag() {
                     // Unchanged context line — show on both sides
                     ChangeTag::Equal => {
-                        let text = html_escape::encode_text(
-                            changes[i].value().trim_end_matches('\n'),
-                        );
+                        let text =
+                            html_escape::encode_text(changes[i].value().trim_end_matches('\n'));
                         let old_line = changes[i].old_index().map(|n| n + 1);
                         let new_line = changes[i].new_index().map(|n| n + 1);
                         let _ = write!(
@@ -506,9 +505,8 @@ impl VllmPostGradPassDiffParser {
                     }
                     // Standalone insert (not preceded by a delete)
                     ChangeTag::Insert => {
-                        let text = html_escape::encode_text(
-                            changes[i].value().trim_end_matches('\n'),
-                        );
+                        let text =
+                            html_escape::encode_text(changes[i].value().trim_end_matches('\n'));
                         let new_line = changes[i].new_index().map(|n| n + 1);
                         let _ = write!(
                             html,
@@ -675,10 +673,7 @@ pub fn generate_vllm_summary(
             .and_then(|c| c.prefix.clone())
             .unwrap_or_default();
 
-        let is_cache_hit = call
-            .compile_event_type
-            .as_deref()
-            == Some("aot_cache_hit");
+        let is_cache_hit = call.compile_event_type.as_deref() == Some("aot_cache_hit");
 
         compile_call_contexts.push(VllmCompileCallContext {
             display_index: i + 1,
@@ -701,15 +696,13 @@ pub fn generate_vllm_summary(
 
     // Detect shared config: if all calls have the same config (by JSON equality)
     let (has_shared_config, shared_config) = if has_multiple_calls {
-        let configs: Vec<_> = calls
-            .iter()
-            .filter_map(|c| c.config.as_ref())
-            .collect();
+        let configs: Vec<_> = calls.iter().filter_map(|c| c.config.as_ref()).collect();
         if configs.len() >= 2 {
-            let first_json = serde_json::to_string(&normalize_config(configs[0])).unwrap_or_default();
-            let all_same = configs[1..]
-                .iter()
-                .all(|c| serde_json::to_string(&normalize_config(c)).unwrap_or_default() == first_json);
+            let first_json =
+                serde_json::to_string(&normalize_config(configs[0])).unwrap_or_default();
+            let all_same = configs[1..].iter().all(|c| {
+                serde_json::to_string(&normalize_config(c)).unwrap_or_default() == first_json
+            });
             if all_same {
                 // Hide per-call config since they're all the same
                 for ctx in &mut compile_call_contexts {
