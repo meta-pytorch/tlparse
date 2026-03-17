@@ -63,6 +63,8 @@ pub struct VllmSummaryContext {
     pub has_config: bool,
     pub dynamo_artifacts: Vec<ArtifactInfo>,
     pub has_dynamo_artifacts: bool,
+    pub pattern_artifacts: Vec<ArtifactInfo>,
+    pub has_pattern_artifacts: bool,
     pub piecewise_graph_file: Option<String>,
     pub has_piecewise: bool,
     pub compile_range_groups: Vec<VllmCompileRangeGroup>,
@@ -81,6 +83,9 @@ pub struct VllmSubgraphWithArtifacts {
     pub submod_name: String,
     pub artifacts: Vec<ArtifactInfo>,
     pub artifact_count: usize,
+    pub pass_artifacts: Vec<ArtifactInfo>,
+    pub pass_artifact_count: usize,
+    pub has_pass_artifacts: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

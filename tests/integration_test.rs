@@ -2743,6 +2743,9 @@ fn test_parse_vllm_post_grad_diff() {
     assert!(output.is_ok());
     let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
 
+    // Check pattern file exists
+    assert!(prefix_exists(&map, "-_0_0_0/vllm_patterns.FusionPass"));
+
     // Check post-pass graph txt files exist
     assert!(prefix_exists(&map, "-_0_0_0/vllm_post_grad.0.FusionPass"));
     assert!(prefix_exists(&map, "-_0_0_0/vllm_post_grad.1.ReshapePass"));

@@ -1,3 +1,10 @@
+V0127 17:17:45.075000 1175001 torch/foo.py:50] {"graph_dump": {"name": "vllm_patterns.FusionPass"}, "rank": 0, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "b2984d935e100cb9f04245b5b6b51833"}
+	# Patterns for FusionPass
+	def pattern_0():
+	    x = KeywordArg("x")
+	    sin = CallFunction(torch.sin, x)
+	    cos = CallFunction(torch.cos, x)
+	    return CallFunction(operator.add, sin, cos)
 V0127 17:17:45.175000 1175001 torch/foo.py:100] {"artifact": {"name": "before_post_grad_graph", "encoding": "string"}, "rank": 0, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "e830dc536dd44eda7a0b9e5b2440b620"}
 	def forward(self, x):
 	    a = torch.sin(x)
