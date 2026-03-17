@@ -2749,7 +2749,10 @@ fn test_parse_vllm_post_grad_diff() {
 
     // First pass diffs against before_post_grad_graph
     let fusion_diff_path = PathBuf::from("-_0_0_0/vllm_post_grad.0.FusionPass.diff.html");
-    assert!(map.contains_key(&fusion_diff_path), "FusionPass diff not found");
+    assert!(
+        map.contains_key(&fusion_diff_path),
+        "FusionPass diff not found"
+    );
     let fusion_diff = &map[&fusion_diff_path];
     assert!(fusion_diff.contains("Pass Diff: 0.FusionPass"));
     assert!(fusion_diff.contains("diff-add"));
@@ -2757,7 +2760,10 @@ fn test_parse_vllm_post_grad_diff() {
 
     // Second pass diffs against first pass
     let reshape_diff_path = PathBuf::from("-_0_0_0/vllm_post_grad.1.ReshapePass.diff.html");
-    assert!(map.contains_key(&reshape_diff_path), "ReshapePass diff not found");
+    assert!(
+        map.contains_key(&reshape_diff_path),
+        "ReshapePass diff not found"
+    );
     let reshape_diff = &map[&reshape_diff_path];
     assert!(reshape_diff.contains("Pass Diff: 1.ReshapePass"));
 }
