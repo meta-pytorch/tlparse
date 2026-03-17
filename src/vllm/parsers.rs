@@ -3,8 +3,8 @@ use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::types::{CompileId, Envelope};
 
 use super::types::{
-    ArtifactInfo, VllmCompilationConfig, VllmCompileRangeGroup, VllmDiffContext,
-    VllmSubgraphInfo, VllmSubgraphWithArtifacts, VllmSummaryContext,
+    ArtifactInfo, VllmCompilationConfig, VllmCompileRangeGroup, VllmDiffContext, VllmSubgraphInfo,
+    VllmSubgraphWithArtifacts, VllmSummaryContext,
 };
 
 use std::cell::RefCell;
@@ -310,9 +310,8 @@ impl VllmPostGradPassDiffParser {
                 match changes[i].tag() {
                     // Unchanged context line — show on both sides
                     ChangeTag::Equal => {
-                        let text = html_escape::encode_text(
-                            changes[i].value().trim_end_matches('\n'),
-                        );
+                        let text =
+                            html_escape::encode_text(changes[i].value().trim_end_matches('\n'));
                         let old_line = changes[i].old_index().map(|n| n + 1);
                         let new_line = changes[i].new_index().map(|n| n + 1);
                         let _ = write!(
@@ -372,9 +371,8 @@ impl VllmPostGradPassDiffParser {
                     }
                     // Standalone insert (not preceded by a delete)
                     ChangeTag::Insert => {
-                        let text = html_escape::encode_text(
-                            changes[i].value().trim_end_matches('\n'),
-                        );
+                        let text =
+                            html_escape::encode_text(changes[i].value().trim_end_matches('\n'));
                         let new_line = changes[i].new_index().map(|n| n + 1);
                         let _ = write!(
                             html,
@@ -504,7 +502,12 @@ pub fn generate_vllm_summary(
     tt: &TinyTemplate,
     custom_header_html: &str,
 ) -> anyhow::Result<String> {
-    let config = state.config.borrow().as_ref().map(|c| normalize_config(c)).unwrap_or_default();
+    let config = state
+        .config
+        .borrow()
+        .as_ref()
+        .map(|c| normalize_config(c))
+        .unwrap_or_default();
     let dynamo_artifacts = state.build_dynamo_artifacts();
     let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
     let piecewise_graph_file = state.piecewise_graph_file.borrow().clone();
