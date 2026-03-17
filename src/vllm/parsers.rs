@@ -3,8 +3,9 @@ use crate::templates::TEMPLATE_QUERY_PARAM_SCRIPT;
 use crate::types::{CompileId, Envelope};
 
 use super::types::{
-    ArtifactInfo, VllmCompilationConfig, VllmCompileRangeGroup, VllmDiffContext, VllmSubgraphInfo,
-    VllmSubgraphWithArtifacts, VllmSummaryContext,
+    ArtifactInfo, VllmCompilationConfig, VllmCompileCall, VllmCompileCallContext,
+    VllmCompileRangeGroup, VllmDiffContext, VllmSubgraphInfo, VllmSubgraphWithArtifacts,
+    VllmSummaryContext,
 };
 
 use std::cell::RefCell;
@@ -14,11 +15,11 @@ use tinytemplate::TinyTemplate;
 
 #[derive(Debug, Default)]
 pub struct VllmState {
-    pub config: RefCell<Option<VllmCompilationConfig>>,
-    pub piecewise_graph_file: RefCell<Option<String>>,
-    pub subgraphs: RefCell<Vec<VllmSubgraphInfo>>,
-    pub pre_subgraph_artifacts: RefCell<Vec<ArtifactInfo>>,
+    pub compile_calls: RefCell<Vec<VllmCompileCall>>,
     pub has_vllm_artifacts: RefCell<bool>,
+    /// Buffered compile event type from vllm_compile_event, to be attached to
+    /// the next compile call (since the event arrives before vllm_compilation_config).
+    pending_compile_event_type: RefCell<Option<String>>,
 }
 
 impl VllmState {
@@ -30,8 +31,51 @@ impl VllmState {
         *self.has_vllm_artifacts.borrow()
     }
 
-    // Add artifact to current subgraph, or pre_subgraph_artifacts if no subgraph yet
+    /// Push a new compile call when a `vllm_compilation_config` is seen.
+    /// If the last call has no config yet (created by ensure_compile_call for early artifacts),
+    /// populate it instead of creating a new one.
+    /// Consumes any pending compile event type from a prior vllm_compile_event.
+    pub fn push_compile_call(&self, config: VllmCompilationConfig) {
+        let pending_event = self.pending_compile_event_type.borrow_mut().take();
+        let mut calls = self.compile_calls.borrow_mut();
+        if let Some(last) = calls.last_mut() {
+            if last.config.is_none() {
+                last.config = Some(config);
+                if last.compile_event_type.is_none() {
+                    last.compile_event_type = pending_event;
+                }
+                return;
+            }
+        }
+        let index = calls.len();
+        calls.push(VllmCompileCall {
+            index,
+            config: Some(config),
+            compile_event_type: pending_event,
+            ..Default::default()
+        });
+    }
+
+    /// Buffer a compile event type to be attached to the next compile call.
+    /// The event always arrives before its corresponding vllm_compilation_config,
+    /// so we buffer it until push_compile_call consumes it.
+    pub fn set_pending_compile_event(&self, event_type: String) {
+        *self.pending_compile_event_type.borrow_mut() = Some(event_type);
+    }
+
+    /// Ensure at least one compile call exists. Creates a default one if empty.
+    fn ensure_compile_call(&self) {
+        let mut calls = self.compile_calls.borrow_mut();
+        if calls.is_empty() {
+            calls.push(VllmCompileCall::default());
+        }
+    }
+
+    /// Add artifact to the current (last) compile call's last subgraph,
+    /// or to pre_subgraph_artifacts if no subgraph exists yet.
     pub fn add_artifact(&self, filename: &std::path::Path, suffix: String) {
+        self.ensure_compile_call();
+
         let url = filename.to_string_lossy().to_string();
         let name = filename
             .file_stem()
@@ -39,85 +83,87 @@ impl VllmState {
             .map(|s| s.to_string())
             .unwrap_or_else(|| url.clone());
 
-        // Track piecewise split graph file for linking in summary
+        // Track piecewise split graph file on the current compile call
         if name.starts_with("vllm_piecewise_split_graph") {
-            *self.piecewise_graph_file.borrow_mut() = Some(url.clone());
+            let mut calls = self.compile_calls.borrow_mut();
+            if let Some(last) = calls.last_mut() {
+                last.piecewise_graph_file = Some(url.clone());
+            }
         }
 
         let artifact = ArtifactInfo { name, url, suffix };
-        let mut subgraphs = self.subgraphs.borrow_mut();
-        if let Some(last) = subgraphs.last_mut() {
-            last.artifacts.push(artifact);
-        } else {
-            self.pre_subgraph_artifacts.borrow_mut().push(artifact);
+        let mut calls = self.compile_calls.borrow_mut();
+        if let Some(call) = calls.last_mut() {
+            if let Some(last_subgraph) = call.subgraphs.last_mut() {
+                last_subgraph.artifacts.push(artifact);
+            } else {
+                call.pre_subgraph_artifacts.push(artifact);
+            }
         }
     }
+}
 
-    // Group subgraphs by compile range/size for hierarchical display
-    pub fn build_compile_range_groups(&self) -> Vec<VllmCompileRangeGroup> {
-        use indexmap::IndexMap;
+// Group subgraphs by compile range/size for hierarchical display
+fn build_compile_range_groups(call: &VllmCompileCall) -> Vec<VllmCompileRangeGroup> {
+    use indexmap::IndexMap;
 
-        let subgraphs = self.subgraphs.borrow();
-        let mut groups: IndexMap<String, Vec<VllmSubgraphWithArtifacts>> = IndexMap::new();
+    let mut groups: IndexMap<String, Vec<VllmSubgraphWithArtifacts>> = IndexMap::new();
 
-        for subgraph in subgraphs.iter() {
-            let size_or_range = subgraph.size_or_range();
-            let (pass_artifacts, artifacts): (Vec<_>, Vec<_>) = subgraph
-                .artifacts
-                .iter()
-                .cloned()
-                .partition(|a| a.name.contains("vllm_post_grad."));
-            let artifact_count = artifacts.len();
-            let pass_artifact_count = pass_artifacts.len();
-            let has_pass_artifacts = pass_artifact_count > 0;
-            groups
-                .entry(size_or_range)
-                .or_default()
-                .push(VllmSubgraphWithArtifacts {
-                    submod_name: subgraph.display_submod_name(),
-                    artifacts,
-                    artifact_count,
-                    pass_artifacts,
-                    pass_artifact_count,
-                    has_pass_artifacts,
-                });
-        }
-
+    for subgraph in call.subgraphs.iter() {
+        let size_or_range = subgraph.size_or_range();
+        let (pass_artifacts, artifacts): (Vec<_>, Vec<_>) = subgraph
+            .artifacts
+            .iter()
+            .cloned()
+            .partition(|a| a.name.contains("vllm_post_grad."));
+        let artifact_count = artifacts.len();
+        let pass_artifact_count = pass_artifacts.len();
+        let has_pass_artifacts = pass_artifact_count > 0;
         groups
-            .into_iter()
-            .map(|(size_or_range, submods)| VllmCompileRangeGroup {
-                size_or_range,
-                submod_count: submods.len(),
-                submods,
-            })
-            .collect()
+            .entry(size_or_range)
+            .or_default()
+            .push(VllmSubgraphWithArtifacts {
+                submod_name: subgraph.display_submod_name(),
+                artifacts,
+                artifact_count,
+                pass_artifacts,
+                pass_artifact_count,
+                has_pass_artifacts,
+            });
     }
 
-    // Get pattern artifacts from pre_subgraph_artifacts
-    pub fn build_pattern_artifacts(&self) -> Vec<ArtifactInfo> {
-        self.pre_subgraph_artifacts
-            .borrow()
-            .iter()
-            .filter(|a| a.name.starts_with("vllm_patterns."))
-            .cloned()
-            .collect()
-    }
+    groups
+        .into_iter()
+        .map(|(size_or_range, submods)| VllmCompileRangeGroup {
+            size_or_range,
+            submod_count: submods.len(),
+            submods,
+        })
+        .collect()
+}
 
-    // Get dynamo artifacts from pre_subgraph_artifacts
-    pub fn build_dynamo_artifacts(&self) -> Vec<ArtifactInfo> {
-        let dynamo_names = [
-            "dynamo_side_effects",
-            "dynamo_output_graph",
-            "dynamo_cpp_guards_str",
-            "compilation_metrics",
-        ];
-        self.pre_subgraph_artifacts
-            .borrow()
-            .iter()
-            .filter(|a| dynamo_names.iter().any(|name| a.name.starts_with(name)))
-            .cloned()
-            .collect()
-    }
+// Get dynamo artifacts from pre_subgraph_artifacts
+fn build_dynamo_artifacts(call: &VllmCompileCall) -> Vec<ArtifactInfo> {
+    let dynamo_names = [
+        "dynamo_side_effects",
+        "dynamo_output_graph",
+        "dynamo_cpp_guards_str",
+        "compilation_metrics",
+    ];
+    call.pre_subgraph_artifacts
+        .iter()
+        .filter(|a| dynamo_names.iter().any(|name| a.name.starts_with(name)))
+        .cloned()
+        .collect()
+}
+
+// Get pattern artifacts from pre_subgraph_artifacts
+fn build_pattern_artifacts(call: &VllmCompileCall) -> Vec<ArtifactInfo> {
+    call.pre_subgraph_artifacts
+        .iter()
+        .filter(|a| a.name.starts_with("vllm_patterns."))
+        .cloned()
+        .collect()
 }
 
 // Parses vllm_compilation_config artifacts.
@@ -155,7 +201,7 @@ impl StructuredLogParser for VllmCompilationConfigParser {
         payload: &str,
     ) -> anyhow::Result<ParserResults> {
         if let Ok(config) = serde_json::from_str::<VllmCompilationConfig>(payload) {
-            *self.state.config.borrow_mut() = Some(config);
+            self.state.push_compile_call(config);
             *self.state.has_vllm_artifacts.borrow_mut() = true;
         }
 
@@ -167,8 +213,55 @@ impl StructuredLogParser for VllmCompilationConfigParser {
     }
 }
 
+// Parses vllm_compile_event artifacts emitted by vLLM's @support_torch_compile decorator.
+// Stores the event type (aot_cache_hit / fresh_compile) on the current compile call.
+pub struct VllmCompileEventParser {
+    state: Rc<VllmState>,
+}
+
+impl VllmCompileEventParser {
+    pub fn new(state: Rc<VllmState>) -> Self {
+        Self { state }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct VllmCompileEvent {
+    #[serde(rename = "type")]
+    event_type: String,
+}
+
+impl StructuredLogParser for VllmCompileEventParser {
+    fn name(&self) -> &'static str {
+        "vllm_compile_event"
+    }
+
+    fn get_metadata<'e>(&self, e: &'e Envelope) -> Option<Metadata<'e>> {
+        if let Some(artifact) = &e.artifact {
+            if artifact.name == "vllm_compile_event" {
+                return Some(Metadata::Artifact(artifact));
+            }
+        }
+        None
+    }
+
+    fn parse<'e>(
+        &self,
+        _lineno: usize,
+        _metadata: Metadata<'e>,
+        _rank: Option<u32>,
+        _compile_id: &Option<CompileId>,
+        payload: &str,
+    ) -> anyhow::Result<ParserResults> {
+        if let Ok(event) = serde_json::from_str::<VllmCompileEvent>(payload) {
+            self.state.set_pending_compile_event(event.event_type);
+        }
+        Ok(Vec::new())
+    }
+}
+
 // Parses vllm_piecewise_compile_start artifacts and vllm_subgraph_*/vllm_submod_* graph dumps.
-// On compile_start: pushes new VllmSubgraphInfo to state.subgraphs (subsequent artifacts attach here).
+// On compile_start: pushes new VllmSubgraphInfo to the current compile call's subgraphs.
 // On graph_dump: adds artifact to current subgraph and outputs the graph file.
 pub struct VllmPiecewiseCompileParser {
     state: Rc<VllmState>,
@@ -214,7 +307,11 @@ impl StructuredLogParser for VllmPiecewiseCompileParser {
         match metadata {
             Metadata::Artifact(_artifact) => {
                 if let Ok(subgraph) = serde_json::from_str::<VllmSubgraphInfo>(payload) {
-                    self.state.subgraphs.borrow_mut().push(subgraph);
+                    self.state.ensure_compile_call();
+                    let mut calls = self.state.compile_calls.borrow_mut();
+                    if let Some(call) = calls.last_mut() {
+                        call.subgraphs.push(subgraph);
+                    }
                 }
                 Ok(Vec::new())
             }
@@ -271,13 +368,13 @@ impl StructuredLogParser for VllmPiecewiseSplitGraphParser {
     }
 }
 
-// Parses two kinds of log entries to produce per-pass diff pages:
+// Parses three kinds of log entries to produce per-pass diff pages:
 //
 //   1. "before_post_grad_graph" artifact — the graph before any passes run.
 //      Stored as the diff baseline; no file output (ArtifactParser handles that).
 //
-//   2. "vllm_patterns.<PassName>" graph dump — pattern matcher patterns.
-//      Output as a standalone .py file (no diffing).
+//   2. "vllm_patterns.<PassName>" graph dump — pattern matcher source for a pass.
+//      Output as a standalone .py file (linked from the summary page).
 //
 //   3. "vllm_post_grad.<index>.<PassName>" graph dump — the graph after a pass.
 //      Diffed against `previous_payload` to produce a side-by-side HTML diff,
@@ -287,6 +384,8 @@ pub struct VllmPostGradPassDiffParser {
     // The graph payload from the previous pass (or before_post_grad_graph),
     // used as the "before" side of the next diff.
     previous_payload: RefCell<Option<String>>,
+    /// Tracks which compile call we're in, to reset baseline on new compile call.
+    current_compile_call_index: RefCell<usize>,
 }
 
 impl VllmPostGradPassDiffParser {
@@ -294,6 +393,18 @@ impl VllmPostGradPassDiffParser {
         Self {
             state,
             previous_payload: RefCell::new(None),
+            current_compile_call_index: RefCell::new(0),
+        }
+    }
+
+    /// Check if we've moved to a new compile call, and reset baseline if so.
+    fn check_compile_call_change(&self) {
+        let calls = self.state.compile_calls.borrow();
+        let current_idx = if calls.is_empty() { 0 } else { calls.len() - 1 };
+        let mut tracked_idx = self.current_compile_call_index.borrow_mut();
+        if current_idx != *tracked_idx {
+            *tracked_idx = current_idx;
+            *self.previous_payload.borrow_mut() = None;
         }
     }
 
@@ -448,6 +559,8 @@ impl StructuredLogParser for VllmPostGradPassDiffParser {
         compile_id: &Option<CompileId>,
         payload: &str,
     ) -> anyhow::Result<ParserResults> {
+        self.check_compile_call_change();
+
         // before_post_grad_graph (artifact): seed baseline for first pass diff.
         // Don't output a file — the default ArtifactParser handles that.
         if matches!(metadata, Metadata::Artifact(a) if a.name == "before_post_grad_graph") {
@@ -462,7 +575,7 @@ impl StructuredLogParser for VllmPostGradPassDiffParser {
 
         *self.state.has_vllm_artifacts.borrow_mut() = true;
 
-        // Handle vllm_patterns.* graph dumps: output as standalone .py file
+        // Handle vllm_patterns.* graph dumps: output as a standalone .py file
         if graph_dump.name.starts_with("vllm_patterns.") {
             let filename = format!("{}.py", graph_dump.name);
             let f = build_file_path(&filename, lineno, compile_id);
@@ -512,6 +625,7 @@ impl StructuredLogParser for VllmPostGradPassDiffParser {
 
 pub fn vllm_parsers_with_state(state: Rc<VllmState>) -> Vec<Box<dyn StructuredLogParser>> {
     vec![
+        Box::new(VllmCompileEventParser::new(state.clone())),
         Box::new(VllmCompilationConfigParser::new(state.clone())),
         Box::new(VllmPiecewiseSplitGraphParser::new(state.clone())),
         Box::new(VllmPiecewiseCompileParser::new(state.clone())),
@@ -534,33 +648,85 @@ pub fn generate_vllm_summary(
     tt: &TinyTemplate,
     custom_header_html: &str,
 ) -> anyhow::Result<String> {
-    let config = state
-        .config
-        .borrow()
-        .as_ref()
-        .map(|c| normalize_config(c))
-        .unwrap_or_default();
-    let dynamo_artifacts = state.build_dynamo_artifacts();
-    let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
-    let pattern_artifacts = state.build_pattern_artifacts();
-    let has_pattern_artifacts = !pattern_artifacts.is_empty();
-    let piecewise_graph_file = state.piecewise_graph_file.borrow().clone();
-    let has_piecewise = piecewise_graph_file.is_some();
-    let compile_range_groups = state.build_compile_range_groups();
+    let calls = state.compile_calls.borrow();
+
+    // Build per-call contexts
+    let mut compile_call_contexts: Vec<VllmCompileCallContext> = Vec::new();
+    for (i, call) in calls.iter().enumerate() {
+        let config = call
+            .config
+            .as_ref()
+            .map(|c| normalize_config(c))
+            .unwrap_or_default();
+        let has_config = call.config.is_some();
+        let dynamo_artifacts = build_dynamo_artifacts(call);
+        let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
+        let pattern_artifacts = build_pattern_artifacts(call);
+        let has_pattern_artifacts = !pattern_artifacts.is_empty();
+        let has_piecewise = call.piecewise_graph_file.is_some();
+        let compile_range_groups = build_compile_range_groups(call);
+
+        // Label: use config prefix if available
+        let label = call
+            .config
+            .as_ref()
+            .and_then(|c| c.prefix.clone())
+            .unwrap_or_default();
+
+        let is_cache_hit = call.compile_event_type.as_deref() == Some("aot_cache_hit");
+
+        compile_call_contexts.push(VllmCompileCallContext {
+            display_index: i + 1,
+            label,
+            is_first: i == 0,
+            is_cache_hit,
+            has_config,
+            config,
+            dynamo_artifacts,
+            has_dynamo_artifacts,
+            pattern_artifacts,
+            has_pattern_artifacts,
+            piecewise_graph_file: call.piecewise_graph_file.clone(),
+            has_piecewise,
+            compile_range_groups,
+        });
+    }
+
+    let has_multiple_calls = compile_call_contexts.len() > 1;
+
+    // Detect shared config: if all calls have the same config (by JSON equality)
+    let (has_shared_config, shared_config) = if has_multiple_calls {
+        let configs: Vec<_> = calls.iter().filter_map(|c| c.config.as_ref()).collect();
+        if configs.len() >= 2 {
+            let first_json =
+                serde_json::to_string(&normalize_config(configs[0])).unwrap_or_default();
+            let all_same = configs[1..].iter().all(|c| {
+                serde_json::to_string(&normalize_config(c)).unwrap_or_default() == first_json
+            });
+            if all_same {
+                // Hide per-call config since they're all the same
+                for ctx in &mut compile_call_contexts {
+                    ctx.has_config = false;
+                }
+                (true, normalize_config(configs[0]))
+            } else {
+                (false, VllmCompilationConfig::default())
+            }
+        } else {
+            (false, VllmCompilationConfig::default())
+        }
+    } else {
+        (false, VllmCompilationConfig::default())
+    };
 
     let context = VllmSummaryContext {
         css: super::templates::VLLM_CSS.to_string(),
         qps: TEMPLATE_QUERY_PARAM_SCRIPT.to_string(),
         custom_header_html: custom_header_html.to_string(),
-        has_config: state.config.borrow().is_some(),
-        config,
-        dynamo_artifacts,
-        has_dynamo_artifacts,
-        pattern_artifacts,
-        has_pattern_artifacts,
-        piecewise_graph_file,
-        has_piecewise,
-        compile_range_groups,
+        compile_calls: compile_call_contexts,
+        has_multiple_calls,
+        has_shared_config,
+        shared_config,
     };
 
     Ok(tt.render("vllm_summary.html", &context)?)
