@@ -273,7 +273,12 @@ pub fn generate_vllm_summary(
     tt: &TinyTemplate,
     custom_header_html: &str,
 ) -> anyhow::Result<String> {
-    let config = state.config.borrow().as_ref().map(|c| normalize_config(c)).unwrap_or_default();
+    let config = state
+        .config
+        .borrow()
+        .as_ref()
+        .map(|c| normalize_config(c))
+        .unwrap_or_default();
     let dynamo_artifacts = state.build_dynamo_artifacts();
     let has_dynamo_artifacts = !dynamo_artifacts.is_empty();
     let piecewise_graph_file = state.piecewise_graph_file.borrow().clone();
