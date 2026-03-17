@@ -68,6 +68,14 @@ pub struct VllmSummaryContext {
     pub compile_range_groups: Vec<VllmCompileRangeGroup>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct VllmDiffContext {
+    pub css: String,
+    pub pass_name: String,
+    pub diff_html: String,
+    pub qps: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VllmSubgraphWithArtifacts {
     pub submod_name: String,

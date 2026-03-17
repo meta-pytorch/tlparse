@@ -534,6 +534,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
     }
     tt.add_template("provenance_tracking.html", TEMPLATE_PROVENANCE_TRACKING)?;
     tt.add_template("vllm_summary.html", vllm::templates::VLLM_SUMMARY_TEMPLATE)?;
+    tt.add_template("vllm_diff.html", vllm::templates::VLLM_DIFF_TEMPLATE)?;
 
     let mut unknown_fields: FxHashSet<String> = FxHashSet::default();
 

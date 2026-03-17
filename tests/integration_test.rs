@@ -2731,3 +2731,39 @@ fn test_parse_vllm_sample() {
     assert!(index_html.contains("submod_0"),);
     assert!(index_html.contains("submod_2"),);
 }
+
+#[test]
+fn test_parse_vllm_post_grad_diff() {
+    let path = Path::new("tests/inputs/vllm_post_grad_diff.log").to_path_buf();
+    let config = tlparse::ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config);
+    assert!(output.is_ok());
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // Check post-pass graph txt files exist
+    assert!(prefix_exists(&map, "-_0_0_0/vllm_post_grad.0.FusionPass"));
+    assert!(prefix_exists(&map, "-_0_0_0/vllm_post_grad.1.ReshapePass"));
+
+    // First pass diffs against before_post_grad_graph
+    let fusion_diff_path = PathBuf::from("-_0_0_0/vllm_post_grad.0.FusionPass.diff.html");
+    assert!(
+        map.contains_key(&fusion_diff_path),
+        "FusionPass diff not found"
+    );
+    let fusion_diff = &map[&fusion_diff_path];
+    assert!(fusion_diff.contains("Pass Diff: 0.FusionPass"));
+    assert!(fusion_diff.contains("diff-add"));
+    assert!(fusion_diff.contains("diff-del"));
+
+    // Second pass diffs against first pass
+    let reshape_diff_path = PathBuf::from("-_0_0_0/vllm_post_grad.1.ReshapePass.diff.html");
+    assert!(
+        map.contains_key(&reshape_diff_path),
+        "ReshapePass diff not found"
+    );
+    let reshape_diff = &map[&reshape_diff_path];
+    assert!(reshape_diff.contains("Pass Diff: 1.ReshapePass"));
+}
