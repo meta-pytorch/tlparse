@@ -107,9 +107,12 @@ pub struct RuntimeAnalysis {
     pub has_mismatched_graph_counts: bool,
 }
 
+static RE_EVAL_WITH_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"<eval_with_key>\.([0-9]+)").unwrap());
+
 pub fn extract_eval_with_key_id(filename: &str) -> Option<u64> {
-    let re = Regex::new(r"<eval_with_key>\.([0-9]+)").unwrap();
-    re.captures(filename)
+    RE_EVAL_WITH_KEY
+        .captures(filename)
         .and_then(|caps| caps.get(1))
         .and_then(|m| m.as_str().parse::<u64>().ok())
 }
@@ -249,6 +252,23 @@ impl fmt::Display for CompileId {
 }
 
 impl CompileId {
+    /// Normalize attempt field: if frame_compile_id is set but attempt is None, default to 0.
+    /// This handles old logs that don't have the attempt field.
+    pub fn normalize_attempt(&mut self) {
+        if self.frame_compile_id.is_some() && self.attempt.is_none() {
+            self.attempt = Some(0);
+        }
+    }
+
+    /// Collapse attempt to 0 for index lookups.
+    /// Stack traces come from dynamo_start (always attempt 0), so all attempts
+    /// must map to the same key when looking up stacks, metrics, etc.
+    pub fn collapse_attempt(&mut self) {
+        if self.frame_compile_id.is_some() {
+            self.attempt = Some(0);
+        }
+    }
+
     pub fn as_directory_name(&self) -> String {
         let compiled_autograd_id_str = self
             .compiled_autograd_id
@@ -335,13 +355,15 @@ pub struct FrameSummary {
     pub uninterned_filename: Option<String>,
 }
 
+static RE_SEED_NSPID: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap());
+
 pub fn simplify_filename<'a>(filename: &'a str) -> &'a str {
     let parts: Vec<&'a str> = filename.split("#link-tree/").collect();
     if parts.len() > 1 {
         return parts[1];
     }
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap());
-    if let Some(captures) = RE.captures(filename) {
+    if let Some(captures) = RE_SEED_NSPID.captures(filename) {
         if let Some(capture) = captures.get(0) {
             return &filename[capture.end()..];
         }

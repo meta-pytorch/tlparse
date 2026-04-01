@@ -423,7 +423,7 @@ pub struct CompilationMetricsParser<'t> {
     pub guard_added_fast_index: &'t RefCell<GuardAddedFastIndex>,
     pub create_symbol_index: &'t RefCell<CreateSymbolIndex>,
     pub unbacked_symbol_index: &'t RefCell<UnbackedSymbolIndex>,
-    pub output_files: &'t Vec<OutputFile>,
+    pub output_files: &'t [OutputFile],
     pub compile_id_dir: &'t PathBuf,
 }
 impl StructuredLogParser for CompilationMetricsParser<'_> {
@@ -451,10 +451,7 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                 .map_or("(unknown) ".to_string(), |c| format!("{cid} ", cid = c));
             let mut cid = compile_id.clone();
             if let Some(c) = cid.as_mut() {
-                if let Some(_frame_id) = c.frame_compile_id {
-                    // data migration for old logs that don't have attempt
-                    c.attempt = Some(0);
-                }
+                c.collapse_attempt();
             }
             let stack_html = self
                 .stack_index
