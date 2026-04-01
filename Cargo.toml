@@ -36,5 +36,10 @@ tiny_http = "0.12"
 
 [dev-dependencies]
 assert_cmd = "2.0"
+libc = "0.2"
 predicates = "3.1.0"
 tempfile = "3.10.1"
+
+[[bench]]
+name = "parse_benchmark"
+harness = false

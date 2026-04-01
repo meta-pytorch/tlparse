@@ -1024,6 +1024,7 @@ dependencies = [
  "html-escape",
  "indexmap",
  "indicatif",
+ "libc",
  "md-5",
  "once_cell",
  "opener",
