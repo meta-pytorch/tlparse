@@ -1020,6 +1020,7 @@ dependencies = [
  "base16ct",
  "chrono",
  "clap",
+ "flate2",
  "fxhash",
  "html-escape",
  "indexmap",

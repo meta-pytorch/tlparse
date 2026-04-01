@@ -165,7 +165,12 @@ fn parse_and_write_output(
 
     // Copy the raw log file directly instead of reading it into memory.
     // This avoids holding the entire input file as a String in ParseOutput.
-    fs::copy(log_path, output_dir.join("raw.log"))?;
+    let raw_name = if log_path.extension().map_or(false, |ext| ext == "gz") {
+        "raw.log.gz"
+    } else {
+        "raw.log"
+    };
+    fs::copy(log_path, output_dir.join(raw_name))?;
 
     Ok(output_dir.join("index.html"))
 }
@@ -231,9 +236,12 @@ fn handle_all_ranks(
                 return None;
             }
             let filename = path.file_name()?.to_str()?;
-            filename
-                .strip_prefix("dedicated_log_torch_trace_rank_")?
-                .strip_suffix(".log")?
+            let after_prefix =
+                filename.strip_prefix("dedicated_log_torch_trace_rank_")?;
+            let after_suffix = after_prefix
+                .strip_suffix(".log.gz")
+                .or_else(|| after_prefix.strip_suffix(".log"))?;
+            after_suffix
                 .split('_')
                 .next()?
                 .parse::<u32>()

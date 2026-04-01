@@ -522,7 +522,13 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         .progress_chars("#>-"));
     let spinner = multi.add(ProgressBar::new_spinner());
 
-    let reader = io::BufReader::new(file);
+    let is_gzipped = path.extension().map_or(false, |ext| ext == "gz");
+    let reader: Box<dyn io::Read> = if is_gzipped {
+        Box::new(flate2::read::GzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    let reader = io::BufReader::new(reader);
 
     let re_glog = Regex::new(concat!(
         r"(?<level>[VIWEC])(?<month>\d{2})(?<day>\d{2}) ",

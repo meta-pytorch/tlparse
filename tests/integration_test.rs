@@ -2731,3 +2731,139 @@ fn test_parse_vllm_sample() {
     assert!(index_html.contains("submod_0"),);
     assert!(index_html.contains("submod_2"),);
 }
+
+#[test]
+fn test_parse_gzip_input() {
+    // Compress simple.log into a temp .gz file and parse it
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let original = fs::read("tests/inputs/simple.log").unwrap();
+
+    let temp_dir = tempdir().unwrap();
+    let gz_path = temp_dir.path().join("simple.log.gz");
+    let mut encoder = GzEncoder::new(
+        fs::File::create(&gz_path).unwrap(),
+        Compression::fast(),
+    );
+    encoder.write_all(&original).unwrap();
+    encoder.finish().unwrap();
+
+    let config = tlparse::ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&gz_path, &config);
+    assert!(output.is_ok(), "parse_path should succeed on .gz input");
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // Same expected files as test_parse_simple
+    let expected_files = [
+        "-_0_0_0/aot_forward_graph",
+        "-_0_0_0/dynamo_output_graph",
+        "index.html",
+        "compile_directory.json",
+        "failures_and_restarts.html",
+        "-_0_0_0/inductor_post_grad_graph",
+        "-_0_0_0/inductor_output_code",
+    ];
+    for prefix in expected_files {
+        assert!(
+            prefix_exists(&map, prefix),
+            "{} not found in gzip output",
+            prefix
+        );
+    }
+}
+
+#[test]
+fn test_gzip_cli_raw_log_copy() -> Result<(), Box<dyn std::error::Error>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let original = fs::read("tests/inputs/simple.log").unwrap();
+
+    let temp_dir = tempdir().unwrap();
+    let gz_path = temp_dir.path().join("simple.log.gz");
+    let mut encoder = GzEncoder::new(
+        fs::File::create(&gz_path).unwrap(),
+        Compression::fast(),
+    );
+    encoder.write_all(&original).unwrap();
+    encoder.finish().unwrap();
+
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg(&gz_path)
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    // Should copy as raw.log.gz, not raw.log
+    assert!(
+        out_dir.join("raw.log.gz").exists(),
+        "raw.log.gz should exist for gzip input"
+    );
+    assert!(
+        !out_dir.join("raw.log").exists(),
+        "raw.log should NOT exist for gzip input"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_all_ranks_gzip_input() -> Result<(), Box<dyn std::error::Error>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let temp_dir = tempdir().unwrap();
+    let input_dir = temp_dir.path().join("gz_ranks");
+    fs::create_dir_all(&input_dir)?;
+
+    // Compress the multi-rank log files into .log.gz
+    for rank in 0..2 {
+        let src = PathBuf::from(format!(
+            "tests/inputs/multi_rank_logs/dedicated_log_torch_trace_rank_{rank}.log"
+        ));
+        let original = fs::read(&src)?;
+        let gz_path = input_dir.join(format!(
+            "dedicated_log_torch_trace_rank_{rank}.log.gz"
+        ));
+        let mut encoder = GzEncoder::new(
+            fs::File::create(&gz_path)?,
+            Compression::fast(),
+        );
+        encoder.write_all(&original)?;
+        encoder.finish()?;
+    }
+
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg(&input_dir)
+        .arg("--all-ranks-html")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(out_dir.join("rank_0/index.html").exists());
+    assert!(out_dir.join("rank_1/index.html").exists());
+    assert!(out_dir.join("index.html").exists());
+
+    // Each rank should have raw.log.gz
+    assert!(out_dir.join("rank_0/raw.log.gz").exists());
+    assert!(out_dir.join("rank_1/raw.log.gz").exists());
+
+    let landing = fs::read_to_string(out_dir.join("index.html"))?;
+    assert!(landing.contains(r#"<a href="rank_0/index.html">"#));
+    assert!(landing.contains(r#"<a href="rank_1/index.html">"#));
+    Ok(())
+}
