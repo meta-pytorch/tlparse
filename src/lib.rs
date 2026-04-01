@@ -1276,7 +1276,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         output.push((PathBuf::from("index.html"), tlparse_index_html));
     }
 
-    output.push((PathBuf::from("raw.log"), fs::read_to_string(path)?));
+    // raw.log is handled by the caller via fs::copy to avoid reading the
+    // entire input file into memory.
 
     // Create string table from INTERN_TABLE as an array with nulls for missing indices
     let intern_table = INTERN_TABLE.lock().unwrap();

@@ -162,6 +162,11 @@ fn parse_and_write_output(
         }
         fs::write(out_path, content)?;
     }
+
+    // Copy the raw log file directly instead of reading it into memory.
+    // This avoids holding the entire input file as a String in ParseOutput.
+    fs::copy(log_path, output_dir.join("raw.log"))?;
+
     Ok(output_dir.join("index.html"))
 }
 
