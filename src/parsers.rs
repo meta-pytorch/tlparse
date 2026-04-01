@@ -767,8 +767,9 @@ impl StructuredLogParser for DumpFileParser {
 }
 
 pub fn anchor_source(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let mut html = String::from(
+    // Pre-allocate: HTML output is roughly 2x input size plus boilerplate
+    let mut html = String::with_capacity(text.len() * 2 + 500);
+    html.push_str(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -799,7 +800,7 @@ pub fn anchor_source(text: &str) -> String {
     <pre>"#,
     );
 
-    for (i, line) in lines.iter().enumerate() {
+    for (i, line) in text.lines().enumerate() {
         let line_number = i + 1;
         html.push_str(&format!(
             r#"<span id="L{}">{}</span>"#,

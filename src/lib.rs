@@ -446,6 +446,9 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         serde_json::Value::Number(serde_json::Number::from(parsed))
     };
 
+    // Compute year once instead of calling chrono::Utc::now().year() per line
+    let year = chrono::Utc::now().year();
+
     // Helper function to format timestamp as ISO-8601
     let format_timestamp = |caps: &regex::Captures| -> String {
         let month: u32 = caps.name("month").unwrap().as_str().parse().unwrap();
@@ -454,9 +457,6 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         let minute: u32 = caps.name("minute").unwrap().as_str().parse().unwrap();
         let second: u32 = caps.name("second").unwrap().as_str().parse().unwrap();
         let microsecond: u32 = caps.name("millisecond").unwrap().as_str().parse().unwrap();
-
-        // Assume current year since glog doesn't include year
-        let year = chrono::Utc::now().year();
 
         // Format as ISO-8601 with microsecond precision
         format!(
@@ -498,7 +498,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
     let mut output: ParseOutput = Vec::new();
 
     // Store raw.jsonl content (without payloads)
-    let mut shortraw_content = String::new();
+    // Pre-allocate: shortraw is typically ~12% of raw log size
+    let mut shortraw_content = String::with_capacity(file_size as usize / 8);
 
     let mut tt: TinyTemplate = TinyTemplate::new();
     tt.add_formatter("format_unescaped", tinytemplate::format_unescaped);
@@ -566,6 +567,9 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
     all_parsers.extend(vllm_parsers.iter());
     let mut chromium_events: Vec<serde_json::Value> = Vec::new();
     all_parsers.extend(config.custom_parsers.iter());
+
+    // Reuse payload buffer across iterations to avoid repeated allocation
+    let mut payload_buf = String::new();
 
     while let Some((lineno, line)) = iter.next() {
         bytes_read += line.len() as u64;
@@ -727,7 +731,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
             continue;
         };
 
-        let mut payload = String::new();
+        payload_buf.clear();
         if let Some(ref expect) = e.has_payload {
             let mut first = true;
             while let Some((_payload_lineno, payload_line)) =
@@ -735,13 +739,13 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
             {
                 // Careful! Distinguish between missing EOL and not
                 if !first {
-                    payload.push('\n');
+                    payload_buf.push('\n');
                 }
                 first = false;
-                payload.push_str(&payload_line[1..]);
+                payload_buf.push_str(&payload_line[1..]);
             }
             let mut hasher = Md5::new();
-            hasher.update(&payload);
+            hasher.update(&payload_buf);
             let hash = hasher.finalize();
             let mut expect_buf = [0u8; 16];
             if base16ct::lower::decode(expect, &mut expect_buf).is_ok() {
@@ -794,7 +798,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 lineno,
                 parser,
                 &e,
-                &payload,
+                &payload_buf,
                 &mut output_count,
                 &mut output,
                 compile_directory,
@@ -830,7 +834,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 lineno,
                 &parser,
                 &e,
-                &payload,
+                &payload_buf,
                 &mut output_count,
                 &mut output,
                 compile_directory,
@@ -914,7 +918,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     &reason,
                     lineno,
                     &e,
-                    &payload,
+                    &payload_buf,
                     &mut output_count,
                     &mut output,
                     compile_directory,
@@ -944,7 +948,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                     &reason,
                     lineno,
                     &e,
-                    &payload,
+                    &payload_buf,
                     &mut output_count,
                     &mut output,
                     compile_directory,
@@ -1052,7 +1056,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
 
         if let Some(_) = e.chromium_event {
             // Skip bad json in chromium event. This can happen if log lines are dropped.
-            match serde_json::from_str(&payload) {
+            match serde_json::from_str(&payload_buf) {
                 Ok(event) => chromium_events.push(event),
                 Err(_) => {
                     // Continue processing instead of crashing
@@ -1093,10 +1097,10 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
             ParserResult::NoPayload => {
                 if let Some(ref expect) = e.has_payload {
                     // Only write payload file if no parser generated PayloadFile/PayloadReformatFile output and not a chromium event
-                    if !payload.is_empty() && e.chromium_event.is_none() {
+                    if !payload_buf.is_empty() && e.chromium_event.is_none() {
                         let hash_str = expect;
                         let payload_path = PathBuf::from(format!("payloads/{}.txt", hash_str));
-                        output.push((payload_path, payload.clone()));
+                        output.push((payload_path, payload_buf.clone()));
                         Some(format!("payloads/{}.txt", hash_str))
                     } else {
                         None
