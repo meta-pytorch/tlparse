@@ -37,7 +37,6 @@ flate2 = "1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"
-flate2 = "1.0"
 libc = "0.2"
 predicates = "3.1.0"
 tempfile = "3.10.1"

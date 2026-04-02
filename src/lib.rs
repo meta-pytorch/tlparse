@@ -429,25 +429,6 @@ fn write_to_shortraw(
         return;
     }
 
-    // Check for key conflicts by looking for key patterns in the raw JSON string.
-    let mut conflict_keys: Vec<&str> =
-        vec!["\"timestamp\":", "\"thread\":", "\"pathname\":", "\"lineno\":"];
-    if payload_filename.is_some() {
-        conflict_keys.push("\"payload_filename\":");
-    }
-    for key in &conflict_keys {
-        if trimmed.contains(key) {
-            multi.suspend(|| {
-                eprintln!(
-                    "Key conflict: {} already exists in JSON payload, skipping raw.jsonl JSONL conversion",
-                    key
-                );
-            });
-            stats.fail_key_conflict += 1;
-            return;
-        }
-    }
-
     // Parse as serde_json::Value (BTreeMap-backed) so keys are alphabetically sorted,
     // matching the baseline output format.
     let mut value: serde_json::Value = match serde_json::from_str(trimmed) {
@@ -462,6 +443,25 @@ fn write_to_shortraw(
     };
 
     let obj = value.as_object_mut().unwrap();
+
+    // Check for key conflicts after parsing, so we check real keys not string patterns in values.
+    let conflict_keys: &[&str] = if payload_filename.is_some() {
+        &["timestamp", "thread", "pathname", "lineno", "payload_filename"]
+    } else {
+        &["timestamp", "thread", "pathname", "lineno"]
+    };
+    for key in conflict_keys {
+        if obj.contains_key(*key) {
+            multi.suspend(|| {
+                eprintln!(
+                    "Key conflict: \"{}\" already exists in JSON payload, skipping raw.jsonl JSONL conversion",
+                    key
+                );
+            });
+            stats.fail_key_conflict += 1;
+            return;
+        }
+    }
 
     let thread = caps.name("thread").unwrap().as_str();
     let pathname = caps.name("pathname").unwrap().as_str();
