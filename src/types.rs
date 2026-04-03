@@ -355,8 +355,7 @@ pub struct FrameSummary {
     pub uninterned_filename: Option<String>,
 }
 
-static RE_SEED_NSPID: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap());
+static RE_SEED_NSPID: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^/]+-seed-nspid[^/]+/").unwrap());
 
 pub fn simplify_filename<'a>(filename: &'a str) -> &'a str {
     let parts: Vec<&'a str> = filename.split("#link-tree/").collect();

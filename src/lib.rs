@@ -446,7 +446,13 @@ fn write_to_shortraw(
 
     // Check for key conflicts after parsing, so we check real keys not string patterns in values.
     let conflict_keys: &[&str] = if payload_filename.is_some() {
-        &["timestamp", "thread", "pathname", "lineno", "payload_filename"]
+        &[
+            "timestamp",
+            "thread",
+            "pathname",
+            "lineno",
+            "payload_filename",
+        ]
     } else {
         &["timestamp", "thread", "pathname", "lineno"]
     };
@@ -697,7 +703,15 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                 });
                 stats.fail_json += 1;
                 // Best-effort shortraw write using the raw JSON string
-                write_to_shortraw(&mut shortraw_content, json_line, None, &format_timestamp(&caps), &caps, &multi, &mut stats);
+                write_to_shortraw(
+                    &mut shortraw_content,
+                    json_line,
+                    None,
+                    &format_timestamp(&caps),
+                    &caps,
+                    &multi,
+                    &mut stats,
+                );
                 continue;
             }
         };
@@ -748,7 +762,15 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
             Some(rank) => {
                 if rank != e.rank {
                     stats.other_rank += 1;
-                    write_to_shortraw(&mut shortraw_content, json_line, None, &format_timestamp(&caps), &caps, &multi, &mut stats);
+                    write_to_shortraw(
+                        &mut shortraw_content,
+                        json_line,
+                        None,
+                        &format_timestamp(&caps),
+                        &caps,
+                        &multi,
+                        &mut stats,
+                    );
                     continue;
                 }
             }
@@ -961,7 +983,15 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         if config.export {
             if let Some(ref guard) = e.guard_added {
                 if guard.prefix.as_deref() != Some("eval") {
-                    write_to_shortraw(&mut shortraw_content, json_line, None, &format_timestamp(&caps), &caps, &multi, &mut stats);
+                    write_to_shortraw(
+                        &mut shortraw_content,
+                        json_line,
+                        None,
+                        &format_timestamp(&caps),
+                        &caps,
+                        &multi,
+                        &mut stats,
+                    );
                     continue;
                 }
                 let failure_type = "Guard Evaluated";

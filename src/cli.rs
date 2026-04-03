@@ -243,8 +243,7 @@ fn handle_all_ranks(
                 return None;
             }
             let filename = path.file_name()?.to_str()?;
-            let after_prefix =
-                filename.strip_prefix("dedicated_log_torch_trace_rank_")?;
+            let after_prefix = filename.strip_prefix("dedicated_log_torch_trace_rank_")?;
             let after_suffix = after_prefix
                 .strip_suffix(".log.gz")
                 .or_else(|| after_prefix.strip_suffix(".log"))?;

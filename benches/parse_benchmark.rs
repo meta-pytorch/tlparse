@@ -68,11 +68,9 @@ fn run_parse(input: &PathBuf) -> std::time::Duration {
     for (path, content) in &output {
         let full_path = out_dir.path().join(path);
         if let Some(parent) = full_path.parent() {
-            std::fs::create_dir_all(parent)
-                .expect("failed to create output subdirectory");
+            std::fs::create_dir_all(parent).expect("failed to create output subdirectory");
         }
-        std::fs::write(&full_path, content)
-            .expect("failed to write output file");
+        std::fs::write(&full_path, content).expect("failed to write output file");
     }
     elapsed
 }
@@ -98,9 +96,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let file_size = std::fs::metadata(&input_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
     let line_count = std::io::BufReader::new(
         std::fs::File::open(&input_path).expect("failed to open input file for line counting"),
     )
@@ -167,10 +163,7 @@ fn main() {
     if let (Some(before), Some(after)) = (rss_cold_before, rss_cold_after) {
         println!("  cold-run peak RSS: {}", format_bytes(after));
         if after > before {
-            println!(
-                "  cold-run RSS delta: {}",
-                format_bytes(after - before)
-            );
+            println!("  cold-run RSS delta: {}", format_bytes(after - before));
         }
     }
 
@@ -178,10 +171,7 @@ fn main() {
         println!("  lifetime peak RSS: {}", format_bytes(rss));
         if let Some(before) = rss_before {
             if rss > before {
-                println!(
-                    "  RSS delta (during bench): {}",
-                    format_bytes(rss - before)
-                );
+                println!("  RSS delta (during bench): {}", format_bytes(rss - before));
             }
         }
     } else {

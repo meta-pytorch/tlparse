@@ -2743,10 +2743,7 @@ fn test_parse_gzip_input() {
 
     let temp_dir = tempdir().unwrap();
     let gz_path = temp_dir.path().join("simple.log.gz");
-    let mut encoder = GzEncoder::new(
-        fs::File::create(&gz_path).unwrap(),
-        Compression::fast(),
-    );
+    let mut encoder = GzEncoder::new(fs::File::create(&gz_path).unwrap(), Compression::fast());
     encoder.write_all(&original).unwrap();
     encoder.finish().unwrap();
 
@@ -2787,10 +2784,7 @@ fn test_gzip_cli_raw_log_copy() -> Result<(), Box<dyn std::error::Error>> {
 
     let temp_dir = tempdir().unwrap();
     let gz_path = temp_dir.path().join("simple.log.gz");
-    let mut encoder = GzEncoder::new(
-        fs::File::create(&gz_path).unwrap(),
-        Compression::fast(),
-    );
+    let mut encoder = GzEncoder::new(fs::File::create(&gz_path).unwrap(), Compression::fast());
     encoder.write_all(&original).unwrap();
     encoder.finish().unwrap();
 
@@ -2832,13 +2826,8 @@ fn test_all_ranks_gzip_input() -> Result<(), Box<dyn std::error::Error>> {
             "tests/inputs/multi_rank_logs/dedicated_log_torch_trace_rank_{rank}.log"
         ));
         let original = fs::read(&src)?;
-        let gz_path = input_dir.join(format!(
-            "dedicated_log_torch_trace_rank_{rank}.log.gz"
-        ));
-        let mut encoder = GzEncoder::new(
-            fs::File::create(&gz_path)?,
-            Compression::fast(),
-        );
+        let gz_path = input_dir.join(format!("dedicated_log_torch_trace_rank_{rank}.log.gz"));
+        let mut encoder = GzEncoder::new(fs::File::create(&gz_path)?, Compression::fast());
         encoder.write_all(&original)?;
         encoder.finish()?;
     }
