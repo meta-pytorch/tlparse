@@ -423,7 +423,7 @@ pub struct CompilationMetricsParser<'t> {
     pub guard_added_fast_index: &'t RefCell<GuardAddedFastIndex>,
     pub create_symbol_index: &'t RefCell<CreateSymbolIndex>,
     pub unbacked_symbol_index: &'t RefCell<UnbackedSymbolIndex>,
-    pub output_files: &'t Vec<OutputFile>,
+    pub output_files: &'t [OutputFile],
     pub compile_id_dir: &'t PathBuf,
 }
 impl StructuredLogParser for CompilationMetricsParser<'_> {
@@ -451,10 +451,7 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                 .map_or("(unknown) ".to_string(), |c| format!("{cid} ", cid = c));
             let mut cid = compile_id.clone();
             if let Some(c) = cid.as_mut() {
-                if let Some(_frame_id) = c.frame_compile_id {
-                    // data migration for old logs that don't have attempt
-                    c.attempt = Some(0);
-                }
+                c.collapse_attempt();
             }
             let stack_html = self
                 .stack_index
@@ -767,8 +764,9 @@ impl StructuredLogParser for DumpFileParser {
 }
 
 pub fn anchor_source(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let mut html = String::from(
+    // Pre-allocate: HTML output is roughly 2x input size plus boilerplate
+    let mut html = String::with_capacity(text.len() * 2 + 500);
+    html.push_str(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -799,7 +797,7 @@ pub fn anchor_source(text: &str) -> String {
     <pre>"#,
     );
 
-    for (i, line) in lines.iter().enumerate() {
+    for (i, line) in text.lines().enumerate() {
         let line_number = i + 1;
         html.push_str(&format!(
             r#"<span id="L{}">{}</span>"#,

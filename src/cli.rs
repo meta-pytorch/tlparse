@@ -1,8 +1,10 @@
 use clap::Parser;
 
 use anyhow::{bail, Context};
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::PathBuf;
 
 use tlparse::{
@@ -162,6 +164,21 @@ fn parse_and_write_output(
         }
         fs::write(out_path, content)?;
     }
+
+    // Copy the raw log file directly instead of reading it into memory.
+    // This avoids holding the entire input file as a String in ParseOutput.
+    if log_path.extension().map_or(false, |ext| ext == "gz") {
+        fs::copy(log_path, output_dir.join("raw.log.gz"))?;
+    } else {
+        fs::copy(log_path, output_dir.join("raw.log"))?;
+        // Also store a gzip-compressed copy alongside raw.log
+        let mut in_file = fs::File::open(log_path)?;
+        let gz_file = fs::File::create(output_dir.join("raw.log.gz"))?;
+        let mut encoder = GzEncoder::new(gz_file, Compression::default());
+        io::copy(&mut in_file, &mut encoder)?;
+        encoder.finish()?;
+    }
+
     Ok(output_dir.join("index.html"))
 }
 
@@ -226,9 +243,11 @@ fn handle_all_ranks(
                 return None;
             }
             let filename = path.file_name()?.to_str()?;
-            filename
-                .strip_prefix("dedicated_log_torch_trace_rank_")?
-                .strip_suffix(".log")?
+            let after_prefix = filename.strip_prefix("dedicated_log_torch_trace_rank_")?;
+            let after_suffix = after_prefix
+                .strip_suffix(".log.gz")
+                .or_else(|| after_prefix.strip_suffix(".log"))?;
+            after_suffix
                 .split('_')
                 .next()?
                 .parse::<u32>()

@@ -6,7 +6,11 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::tempdir;
-use tlparse::{self, parsers, CollectivesParityReport};
+use tlparse::{
+    self, analyze_graph_runtime_deltas, generate_multi_rank_landing, parsers,
+    read_chromium_events_with_pid, CollectivesParityReport, GraphRuntime, MultiRankContext,
+    OpRuntime, ParseConfig,
+};
 
 fn prefix_exists(map: &HashMap<PathBuf, String>, prefix: &str) -> bool {
     map.keys()
@@ -2730,4 +2734,614 @@ fn test_parse_vllm_sample() {
     assert!(index_html.contains("size 8"),);
     assert!(index_html.contains("submod_0"),);
     assert!(index_html.contains("submod_2"),);
+}
+
+#[test]
+fn test_parse_gzip_input() {
+    // Compress simple.log into a temp .gz file and parse it
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let original = fs::read("tests/inputs/simple.log").unwrap();
+
+    let temp_dir = tempdir().unwrap();
+    let gz_path = temp_dir.path().join("simple.log.gz");
+    let mut encoder = GzEncoder::new(fs::File::create(&gz_path).unwrap(), Compression::fast());
+    encoder.write_all(&original).unwrap();
+    encoder.finish().unwrap();
+
+    let config = tlparse::ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&gz_path, &config);
+    assert!(output.is_ok(), "parse_path should succeed on .gz input");
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // Same expected files as test_parse_simple
+    let expected_files = [
+        "-_0_0_0/aot_forward_graph",
+        "-_0_0_0/dynamo_output_graph",
+        "index.html",
+        "compile_directory.json",
+        "failures_and_restarts.html",
+        "-_0_0_0/inductor_post_grad_graph",
+        "-_0_0_0/inductor_output_code",
+    ];
+    for prefix in expected_files {
+        assert!(
+            prefix_exists(&map, prefix),
+            "{} not found in gzip output",
+            prefix
+        );
+    }
+}
+
+#[test]
+fn test_gzip_cli_raw_log_copy() -> Result<(), Box<dyn std::error::Error>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let original = fs::read("tests/inputs/simple.log").unwrap();
+
+    let temp_dir = tempdir().unwrap();
+    let gz_path = temp_dir.path().join("simple.log.gz");
+    let mut encoder = GzEncoder::new(fs::File::create(&gz_path).unwrap(), Compression::fast());
+    encoder.write_all(&original).unwrap();
+    encoder.finish().unwrap();
+
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg(&gz_path)
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    // Both raw.log.gz and raw.log (decompressed) should exist
+    assert!(
+        out_dir.join("raw.log.gz").exists(),
+        "raw.log.gz should exist for gzip input"
+    );
+    assert!(
+        out_dir.join("raw.log").exists(),
+        "raw.log should also exist for gzip input (decompressed for BC)"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_all_ranks_gzip_input() -> Result<(), Box<dyn std::error::Error>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let temp_dir = tempdir().unwrap();
+    let input_dir = temp_dir.path().join("gz_ranks");
+    fs::create_dir_all(&input_dir)?;
+
+    // Compress the multi-rank log files into .log.gz
+    for rank in 0..2 {
+        let src = PathBuf::from(format!(
+            "tests/inputs/multi_rank_logs/dedicated_log_torch_trace_rank_{rank}.log"
+        ));
+        let original = fs::read(&src)?;
+        let gz_path = input_dir.join(format!("dedicated_log_torch_trace_rank_{rank}.log.gz"));
+        let mut encoder = GzEncoder::new(fs::File::create(&gz_path)?, Compression::fast());
+        encoder.write_all(&original)?;
+        encoder.finish()?;
+    }
+
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg(&input_dir)
+        .arg("--all-ranks-html")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(out_dir.join("rank_0/index.html").exists());
+    assert!(out_dir.join("rank_1/index.html").exists());
+    assert!(out_dir.join("index.html").exists());
+
+    // Each rank should have raw.log.gz
+    assert!(out_dir.join("rank_0/raw.log.gz").exists());
+    assert!(out_dir.join("rank_1/raw.log.gz").exists());
+
+    let landing = fs::read_to_string(out_dir.join("index.html"))?;
+    assert!(landing.contains(r#"<a href="rank_0/index.html">"#));
+    assert!(landing.contains(r#"<a href="rank_1/index.html">"#));
+    Ok(())
+}
+
+// ============================================================================
+// Library API tests for features previously only tested via CLI
+// ============================================================================
+
+/// Verify that parse_path includes raw.log in ParseOutput for library callers
+#[test]
+fn test_parse_output_contains_raw_log() {
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let config = ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config).unwrap();
+    let map: HashMap<PathBuf, String> = output.into_iter().collect();
+    assert!(
+        map.contains_key(&PathBuf::from("raw.log")),
+        "raw.log should be present in ParseOutput for library callers"
+    );
+    // Verify the content matches the original file
+    let original = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        map[&PathBuf::from("raw.log")],
+        original,
+        "raw.log content should match the original input file"
+    );
+}
+
+/// Verify that parse_path with gzip input includes raw.log in ParseOutput
+#[test]
+fn test_parse_gzip_output_contains_raw_log() {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let original = fs::read_to_string("tests/inputs/simple.log").unwrap();
+    let temp_dir = tempdir().unwrap();
+    let gz_path = temp_dir.path().join("simple.log.gz");
+    let mut encoder = GzEncoder::new(fs::File::create(&gz_path).unwrap(), Compression::fast());
+    encoder.write_all(original.as_bytes()).unwrap();
+    encoder.finish().unwrap();
+
+    let config = ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&gz_path, &config).unwrap();
+    let map: HashMap<PathBuf, String> = output.into_iter().collect();
+    assert!(
+        map.contains_key(&PathBuf::from("raw.log")),
+        "raw.log should be present in ParseOutput for gzip library callers"
+    );
+}
+
+/// Test analyze_graph_runtime_deltas directly as a library function
+#[test]
+fn test_analyze_graph_runtime_deltas_library() {
+    // Two ranks, same graph, different runtimes
+    let runtimes = vec![
+        GraphRuntime {
+            rank: 0,
+            graph: "-_0_0_0".to_string(),
+            ops: vec![
+                OpRuntime {
+                    name: "op_a".to_string(),
+                    estimated_runtime_ns: 1000.0,
+                },
+                OpRuntime {
+                    name: "op_b".to_string(),
+                    estimated_runtime_ns: 2000.0,
+                },
+            ],
+        },
+        GraphRuntime {
+            rank: 1,
+            graph: "-_0_0_0".to_string(),
+            ops: vec![
+                OpRuntime {
+                    name: "op_a".to_string(),
+                    estimated_runtime_ns: 1500.0,
+                },
+                OpRuntime {
+                    name: "op_b".to_string(),
+                    estimated_runtime_ns: 2500.0,
+                },
+            ],
+        },
+    ];
+
+    let analysis = analyze_graph_runtime_deltas(&runtimes);
+    assert!(analysis.is_some());
+    let analysis = analysis.unwrap();
+    assert!(!analysis.has_mismatched_graph_counts);
+    assert_eq!(analysis.graphs.len(), 1);
+    assert_eq!(analysis.graphs[0].graph_id, "-_0_0_0");
+    // delta_ms should be the max-min total runtime difference across ranks
+    // rank 0 total: 3000 ns = 0.003 ms, rank 1 total: 4000 ns = 0.004 ms
+    assert!(analysis.graphs[0].delta_ms > 0.0);
+}
+
+/// Test analyze_graph_runtime_deltas with mismatched graph counts
+#[test]
+fn test_analyze_graph_runtime_deltas_mismatched() {
+    let runtimes = vec![
+        GraphRuntime {
+            rank: 0,
+            graph: "-_0_0_0".to_string(),
+            ops: vec![OpRuntime {
+                name: "op_a".to_string(),
+                estimated_runtime_ns: 1000.0,
+            }],
+        },
+        GraphRuntime {
+            rank: 0,
+            graph: "-_0_0_1".to_string(),
+            ops: vec![OpRuntime {
+                name: "op_b".to_string(),
+                estimated_runtime_ns: 2000.0,
+            }],
+        },
+        GraphRuntime {
+            rank: 1,
+            graph: "-_0_0_0".to_string(),
+            ops: vec![OpRuntime {
+                name: "op_a".to_string(),
+                estimated_runtime_ns: 1500.0,
+            }],
+        },
+        // rank 1 is missing graph -_0_0_1
+    ];
+
+    let analysis = analyze_graph_runtime_deltas(&runtimes);
+    assert!(analysis.is_some());
+    let analysis = analysis.unwrap();
+    assert!(analysis.has_mismatched_graph_counts);
+}
+
+/// Test read_chromium_events_with_pid directly as a library function
+#[test]
+fn test_read_chromium_events_with_pid_library() {
+    // First, generate output that includes chromium_events.json
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let config = ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config).unwrap();
+    let map: HashMap<PathBuf, String> = output.into_iter().collect();
+
+    // Write the chromium_events.json to a temp dir
+    let temp_dir = tempdir().unwrap();
+    if let Some(events_content) = map.get(&PathBuf::from("chromium_events.json")) {
+        let events_path = temp_dir.path().join("chromium_events.json");
+        fs::write(&events_path, events_content).unwrap();
+
+        let events = read_chromium_events_with_pid(&events_path, 42).unwrap();
+        // All events should have pid set to 42
+        for event in &events {
+            assert_eq!(
+                event.get("pid").and_then(|v| v.as_u64()),
+                Some(42),
+                "All events should have pid set to the provided rank_num"
+            );
+        }
+    }
+}
+
+/// Test generate_multi_rank_landing directly as a library function
+#[test]
+fn test_generate_multi_rank_landing_library() {
+    // Set up per-rank output directories with parsed results
+    let temp_dir = tempdir().unwrap();
+    let out_dir = temp_dir.path();
+
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let config = ParseConfig::default();
+
+    // Parse for two "ranks"
+    for rank in 0..2 {
+        let rank_dir = out_dir.join(format!("rank_{}", rank));
+        fs::create_dir_all(&rank_dir).unwrap();
+        let output = tlparse::parse_path(&path, &config).unwrap();
+        for (filename, content) in output {
+            let file_path = rank_dir.join(&filename);
+            if let Some(dir) = file_path.parent() {
+                fs::create_dir_all(dir).unwrap();
+            }
+            fs::write(file_path, content).unwrap();
+        }
+    }
+
+    let ctx = MultiRankContext {
+        css: "",
+        custom_header_html: "",
+        num_ranks: 2,
+        ranks: vec!["0".to_string(), "1".to_string()],
+        qps: "",
+        has_chromium_events: false,
+        show_desync_warning: false,
+        compile_id_divergence: false,
+        diagnostics: Default::default(),
+    };
+
+    let landing_path = generate_multi_rank_landing(&config, &ctx, out_dir).unwrap();
+    assert!(landing_path.exists(), "Landing page should be generated");
+
+    let content = fs::read_to_string(&landing_path).unwrap();
+    assert!(content.contains(r#"<a href="rank_0/index.html">"#));
+    assert!(content.contains(r#"<a href="rank_1/index.html">"#));
+}
+
+// ============================================================================
+// CLI tests for features previously only tested via library API
+// ============================================================================
+
+/// Basic CLI smoke test for single-file parsing
+#[test]
+fn test_cli_single_file_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(out_dir.join("index.html").exists());
+    assert!(out_dir.join("raw.log").exists());
+    assert!(out_dir.join("raw.log.gz").exists());
+    assert!(out_dir.join("raw.jsonl").exists());
+
+    Ok(())
+}
+
+/// Test --strict flag via CLI causes failure on bad logs
+#[test]
+fn test_cli_strict_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    // simple.log should pass with --strict
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--strict")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    Ok(())
+}
+
+/// Test --export flag via CLI
+#[test]
+fn test_cli_export_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/export.log")
+        .arg("--export")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(out_dir.join("index.html").exists());
+    // Verify export-specific output exists on disk
+    let index_content = fs::read_to_string(out_dir.join("index.html"))?;
+    assert!(
+        index_content.contains("exported_program")
+            || index_content.contains("symbolic_guard_information"),
+        "Export mode should produce export-specific artifacts"
+    );
+
+    Ok(())
+}
+
+/// Test --inductor-provenance flag via CLI
+#[test]
+fn test_cli_inductor_provenance_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/inductor_provenance_aot_cuda_log.txt")
+        .arg("--inductor-provenance")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    // Check that provenance tracking HTML was generated on disk
+    let provenance_files: Vec<_> = fs::read_dir(&out_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map_or(false, |n| n.contains("provenance_tracking"))
+        })
+        .collect();
+    assert!(
+        !provenance_files.is_empty(),
+        "CLI --inductor-provenance should generate provenance tracking files"
+    );
+
+    Ok(())
+}
+
+/// Test --plain-text flag via CLI
+#[test]
+fn test_cli_plain_text_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--plain-text")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(out_dir.join("index.html").exists());
+    Ok(())
+}
+
+/// Test --custom-header-html flag via CLI
+#[test]
+fn test_cli_custom_header_html() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+
+    let custom_html = "<div class='custom-banner'>Test Banner</div>";
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--custom-header-html")
+        .arg(custom_html)
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    let index_content = fs::read_to_string(out_dir.join("index.html"))?;
+    assert!(
+        index_content.contains(custom_html),
+        "Custom header HTML should appear in the generated index.html"
+    );
+    Ok(())
+}
+
+/// Test library plain_text config option
+#[test]
+fn test_library_plain_text_config() {
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let config = ParseConfig {
+        plain_text: true,
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config);
+    assert!(output.is_ok());
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+    assert!(map.contains_key(&PathBuf::from("index.html")));
+}
+
+/// Test library custom_header_html config option
+#[test]
+fn test_library_custom_header_html() {
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let custom_html = "<div>My Custom Header</div>".to_string();
+    let config = ParseConfig {
+        custom_header_html: custom_html.clone(),
+        ..Default::default()
+    };
+    let output = tlparse::parse_path(&path, &config).unwrap();
+    let map: HashMap<PathBuf, String> = output.into_iter().collect();
+    let index = &map[&PathBuf::from("index.html")];
+    assert!(
+        index.contains(&custom_html),
+        "custom_header_html should appear in the library-generated index.html"
+    );
+}
+
+/// Test that CLI produces the same key outputs as library for the same input
+#[test]
+fn test_cli_and_library_output_parity() -> Result<(), Box<dyn std::error::Error>> {
+    // Library
+    let path = Path::new("tests/inputs/simple.log").to_path_buf();
+    let config = ParseConfig {
+        strict: true,
+        ..Default::default()
+    };
+    let lib_output = tlparse::parse_path(&path, &config).unwrap();
+    let lib_files: std::collections::HashSet<String> = lib_output
+        .iter()
+        .map(|(p, _)| p.to_str().unwrap().to_string())
+        .collect();
+
+    // CLI
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--strict")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    // All library output files should exist on disk after CLI run
+    for lib_file in &lib_files {
+        let on_disk = out_dir.join(lib_file);
+        assert!(
+            on_disk.exists(),
+            "Library output file '{}' should exist on disk after CLI run",
+            lib_file
+        );
+    }
+
+    // CLI should also produce raw.log and raw.log.gz (which are handled outside parse_path)
+    assert!(
+        out_dir.join("raw.log").exists(),
+        "CLI should produce raw.log on disk"
+    );
+    assert!(
+        out_dir.join("raw.log.gz").exists(),
+        "CLI should produce raw.log.gz on disk"
+    );
+
+    Ok(())
+}
+
+/// Test that the CLI --overwrite flag works to replace an existing output directory
+#[test]
+fn test_cli_overwrite_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+    fs::create_dir_all(&out_dir)?;
+    // Create a sentinel file that should be removed by --overwrite
+    fs::write(out_dir.join("sentinel.txt"), "should be removed")?;
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    assert!(
+        !out_dir.join("sentinel.txt").exists(),
+        "sentinel file should have been removed by --overwrite"
+    );
+    assert!(out_dir.join("index.html").exists());
+
+    Ok(())
+}
+
+/// Test that the CLI fails without --overwrite when output dir already exists
+#[test]
+fn test_cli_no_overwrite_fails() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempdir()?;
+    let out_dir = temp_dir.path().join("out");
+    fs::create_dir_all(&out_dir)?;
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg("tests/inputs/simple.log")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert()
+        .failure()
+        .stderr(str::contains("already exists"));
+
+    Ok(())
 }
