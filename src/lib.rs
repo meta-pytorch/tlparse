@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::cell::RefCell;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tinytemplate::TinyTemplate;
@@ -29,7 +29,7 @@ pub mod vllm;
 pub use types::{
     ArtifactFlags, CollectiveSchedule, CollectivesParityReport, Diagnostics, DivergenceFlags,
     DivergenceGroup, ExecOrderSummary, GraphAnalysis, GraphCollectivesParity, GraphRuntime,
-    MultiRankContext, RankMetaData, RuntimeAnalysis, RuntimeRankDetail,
+    MultiRankContext, OpRuntime, RankMetaData, RuntimeAnalysis, RuntimeRankDetail,
 };
 
 pub use execution_order::{
@@ -1312,8 +1312,17 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         output.push((PathBuf::from("index.html"), tlparse_index_html));
     }
 
-    // raw.log is handled by the caller via fs::copy to avoid reading the
-    // entire input file into memory.
+    // Include raw.log in output so library callers get it too.
+    // For gzip inputs, decompress so the output is always plain text.
+    if is_gzipped {
+        let file = File::open(path)?;
+        let mut decoder = flate2::read::GzDecoder::new(file);
+        let mut raw_content = String::new();
+        decoder.read_to_string(&mut raw_content)?;
+        output.push((PathBuf::from("raw.log"), raw_content));
+    } else {
+        output.push((PathBuf::from("raw.log"), fs::read_to_string(path)?));
+    }
 
     // Create string table from INTERN_TABLE as an array with nulls for missing indices
     let intern_table = INTERN_TABLE.lock().unwrap();
