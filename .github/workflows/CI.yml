@@ -50,20 +50,34 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
+        platform:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - target: i686-unknown-linux-gnu
+            arch: x86
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+          - target: armv7-unknown-linux-gnueabihf
+            arch: armv7
+          - target: s390x-unknown-linux-gnu
+            arch: s390x
+          - target: powerpc64le-unknown-linux-gnu
+            arch: ppc64le
+          - target: riscv64gc-unknown-linux-gnu
+            arch: riscv64
     steps:
       - uses: actions/checkout@v3
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
+          target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.target }}
+          name: wheels-linux-${{ matrix.platform.arch }}
           path: dist
 
   windows:
