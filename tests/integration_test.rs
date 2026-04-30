@@ -3345,3 +3345,34 @@ fn test_cli_no_overwrite_fails() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_subgraph_name_grouping() {
+    let path = Path::new("tests/inputs/subgraph_name.log").to_path_buf();
+    let config = ParseConfig::default();
+    let output = tlparse::parse_path(&path, &config);
+    assert!(output.is_ok());
+    let map: HashMap<PathBuf, String> = output.unwrap().into_iter().collect();
+
+    // All files should be flat in -_0_0_0/ (no subgraph subdirectories)
+    assert!(prefix_exists(&map, "-_0_0_0/dynamo_output_graph"));
+    assert!(prefix_exists(&map, "-_0_0_0/fx_graph_runnable"));
+
+    // No files should be nested under subgraph subdirectories
+    assert!(
+        !map.keys()
+            .any(|k| k.to_str().unwrap_or("").contains("repeated_subgraph0/")),
+        "files should not be in subgraph subdirectories"
+    );
+
+    // Index should contain subgraph group headers
+    let index = &map[&PathBuf::from("index.html")];
+    assert!(
+        index.contains("Subgraph Name: repeated_subgraph0"),
+        "index should contain repeated_subgraph0 group header"
+    );
+    assert!(
+        index.contains("Subgraph Name: partitioned_bw_subgraph_1_0"),
+        "index should contain partitioned_bw_subgraph_1_0 group header"
+    );
+}

@@ -593,6 +593,8 @@ impl StructuredLogParser for CompilationMetricsParser<'_> {
                     number: o.number.clone(),
                     suffix: o.suffix.clone(),
                     readable_url: o.readable_url.as_ref().map(|u| remove_prefix(u)),
+                    starts_group: o.starts_group,
+                    group_name: o.group_name.clone(),
                 })
                 .collect();
             let extra_metrics: Vec<ExtraMetricContext> = m
