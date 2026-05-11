@@ -195,6 +195,7 @@ Build products below:
     <li><a id="{compile_directory.0}">{compile_directory.0}</a>
     <ul>
         {{ for path_idx in compile_directory.1 }}
+            {{ if path_idx.starts_group }}<li style="margin-top: 8px;">{{ if path_idx.group_name }}Subgraph Name: {path_idx.group_name}{{ endif }}</li>{{ endif }}
             <li><a href="{path_idx.url}">{path_idx.name}</a>{{ if path_idx.readable_url }} (<a href="{path_idx.readable_url}">readable_html</a>){{ endif }} {path_idx.suffix} ({path_idx.number})</li>
         {{ endfor }}
     </ul>

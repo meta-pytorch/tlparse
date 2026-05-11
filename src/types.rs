@@ -636,6 +636,10 @@ pub struct OutputFile {
     pub suffix: String,
     /// URL to a human-readable HTML version of inductor_provenance_tracking_kernel_stack_traces.json
     pub readable_url: Option<String>,
+    #[serde(default)]
+    pub starts_group: bool,
+    #[serde(default)]
+    pub group_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -773,6 +777,7 @@ pub struct Envelope {
     pub rank: Option<u32>,
     #[serde(flatten)]
     pub compile_id: Option<CompileId>,
+    pub subgraph_name: Option<String>,
     #[serde(default)]
     pub has_payload: Option<String>,
     pub stack: Option<StackSummary>,

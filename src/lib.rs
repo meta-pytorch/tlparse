@@ -124,6 +124,7 @@ fn add_file_output(
     compile_directory: &mut Vec<OutputFile>,
     output_count: &mut i32,
     vllm_state: &vllm::VllmState,
+    subgraph_name: &Option<String>,
 ) {
     let is_stack_traces = is_stack_traces_file(&filename);
     let maybe_content = if is_stack_traces {
@@ -158,6 +159,8 @@ fn add_file_output(
         number: *output_count,
         suffix: suffix,
         readable_url,
+        starts_group: false,
+        group_name: subgraph_name.clone().unwrap_or_default(),
     });
     *output_count += 1;
 }
@@ -240,6 +243,7 @@ fn run_parser<'t>(
                                 compile_directory,
                                 output_count,
                                 vllm_state,
+                                &e.subgraph_name,
                             );
                         }
                         ParserOutput::GlobalFile(filename, out) => {
@@ -250,6 +254,7 @@ fn run_parser<'t>(
                                 compile_directory,
                                 output_count,
                                 vllm_state,
+                                &e.subgraph_name,
                             );
                         }
                         ParserOutput::PayloadFile(raw_filename) => {
@@ -264,6 +269,7 @@ fn run_parser<'t>(
                                 compile_directory,
                                 output_count,
                                 vllm_state,
+                                &e.subgraph_name,
                             );
                         }
                         ParserOutput::PayloadReformatFile(raw_filename, formatter) => {
@@ -280,6 +286,7 @@ fn run_parser<'t>(
                                         compile_directory,
                                         output_count,
                                         vllm_state,
+                                        &e.subgraph_name,
                                     );
                                 }
                                 Err(err) => {
@@ -301,6 +308,8 @@ fn run_parser<'t>(
                                 number: *output_count,
                                 suffix: "".to_string(),
                                 readable_url: None,
+                                starts_group: false,
+                                group_name: e.subgraph_name.clone().unwrap_or_default(),
                             });
                             *output_count += 1;
                         }
@@ -857,6 +866,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                                         compile_directory,
                                         &mut output_count,
                                         &vllm_state,
+                                        &e.subgraph_name,
                                     );
                                 }
                                 ParserOutput::GlobalFile(filename, out) => {
@@ -867,6 +877,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                                         compile_directory,
                                         &mut output_count,
                                         &vllm_state,
+                                        &e.subgraph_name,
                                     );
                                 }
                                 ParserOutput::PayloadFile(raw_filename) => {
@@ -881,6 +892,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                                         compile_directory,
                                         &mut output_count,
                                         &vllm_state,
+                                        &e.subgraph_name,
                                     );
                                 }
                                 ParserOutput::PayloadReformatFile(raw_filename, formatter) => {
@@ -897,6 +909,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                                                 compile_directory,
                                                 &mut output_count,
                                                 &vllm_state,
+                                                &e.subgraph_name,
                                             );
                                         }
                                         Err(err) => {
@@ -918,6 +931,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                                         number: output_count,
                                         suffix: "".to_string(),
                                         readable_url: None,
+                                        starts_group: false,
+                                        group_name: e.subgraph_name.clone().unwrap_or_default(),
                                     });
                                     output_count += 1;
                                 }
@@ -1261,6 +1276,16 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
     }
 
     let has_unknown_compile_id = directory.contains_key(&None);
+
+    for files in directory.values_mut() {
+        let mut prev_group = String::new();
+        for file in files.iter_mut() {
+            if file.group_name != prev_group {
+                file.starts_group = true;
+                prev_group = file.group_name.clone();
+            }
+        }
+    }
 
     let directory_names: Vec<String> = directory
         .iter()

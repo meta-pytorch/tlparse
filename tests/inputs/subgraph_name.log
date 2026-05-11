@@ -1,0 +1,6 @@
+V0429 16:46:26.856000 3930665 /torch/_logging/structured.py:28] {"artifact": {"name": "dynamo_output_graph", "encoding": "string"}, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "has_payload": "8b4a69a00ac3b2850d14ad15b66d77ed"}
+	test payload no subgraph
+V0429 16:46:27.745000 3930665 /torch/_inductor/compile_fx.py:1313] {"artifact": {"name": "fx_graph_runnable", "encoding": "string"}, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "subgraph_name": "repeated_subgraph0", "has_payload": "dcffdffe5e74fe67eaf327b0453e379a"}
+	test payload subgraph A
+V0429 16:46:29.604000 3930665 /torch/_inductor/compile_fx.py:1313] {"artifact": {"name": "fx_graph_runnable", "encoding": "string"}, "frame_id": 0, "frame_compile_id": 0, "attempt": 0, "subgraph_name": "partitioned_bw_subgraph_1_0", "has_payload": "13e1309b0f53ad9d570fda42091e0569"}
+	test payload subgraph B
