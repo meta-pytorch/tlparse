@@ -51,3 +51,22 @@ impl StructuredLogParser for MyCustomParser {
 1. Make a release commit by updating Cargo.toml and then running cargo update
 2. Push the release commit and a tag for it.  This will trigger PyPI release
 3. cargo publish
+
+
+
+
+## New workflow:
+
+```
+
+# export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"                   
+  # 1. Parse logs                    
+  cargo run -- <log_file> -o tl_out --no-browser
+
+  # 2. Create standalone viewer (one command)
+  ./scripts/make_viewer.sh tl_out
+
+  # 3. Open — no server needed
+  open tl_out/viewer.html
+      
+```
