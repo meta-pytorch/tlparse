@@ -59,6 +59,11 @@ body {
     transition: background-color 0.2s ease;
 }
 
+.selected {
+    background-color: orange;
+    transition: background-color 0.2s ease;
+}
+
 .mapped-line {
     font-weight: bold;
 }
@@ -153,4 +158,4 @@ body {
 
 .has-match {
     font-weight: bold;
-} 
+}
