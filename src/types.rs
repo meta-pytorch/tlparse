@@ -934,6 +934,8 @@ pub struct IndexContext {
     pub qps: &'static str,
     pub has_inductor_provenance: bool,
     pub directory_names: Vec<String>,
+    pub distinct_graph_breaks: Vec<String>,
+    pub has_distinct_graph_breaks: bool,
 }
 
 #[derive(Debug, Serialize)]
