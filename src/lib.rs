@@ -652,6 +652,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         failures: Vec::new(),
         qps: TEMPLATE_QUERY_PARAM_SCRIPT,
     };
+    let mut distinct_graph_breaks: Vec<String> = Vec::new();
 
     let mut export_failures: Vec<ExportFailure> = Vec::new();
 
@@ -966,6 +967,9 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
                         id.clone(),
                         format!("{}", FailureReason::Restart(restart.clone())),
                     ));
+                    if !distinct_graph_breaks.contains(restart) {
+                        distinct_graph_breaks.push(restart.clone());
+                    }
                 }
             }
             if let Some(f) = m.fail_type.as_ref() {
@@ -1300,6 +1304,7 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
     ));
 
     // Generate traditional tlparse index
+    let has_distinct_graph_breaks = !distinct_graph_breaks.is_empty();
     let index_context = IndexContext {
         css: CSS,
         javascript: JAVASCRIPT,
@@ -1320,6 +1325,8 @@ pub fn parse_path(path: &PathBuf, config: &ParseConfig) -> anyhow::Result<ParseO
         qps: TEMPLATE_QUERY_PARAM_SCRIPT,
         has_inductor_provenance: config.inductor_provenance,
         directory_names: directory_names.clone(),
+        distinct_graph_breaks,
+        has_distinct_graph_breaks,
     };
     let tlparse_index_html = tt.render("index.html", &index_context)?;
 
