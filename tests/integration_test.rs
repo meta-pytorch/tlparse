@@ -2668,6 +2668,35 @@ fn test_collectives_parity_detects_mismatch() -> Result<(), Box<dyn std::error::
 }
 
 #[test]
+fn test_collectives_parity_single_log() -> Result<(), Box<dyn std::error::Error>> {
+    // index.html links collectives_parity.json in every mode, so a plain
+    // single-log run must write it too (not only --all-ranks-html).
+    let input =
+        PathBuf::from("tests/inputs/collectives_parity/dedicated_log_torch_trace_rank_0.log");
+    let temp_out = tempdir()?;
+    let out_dir = temp_out.path().join("out");
+
+    let mut cmd = Command::cargo_bin("tlparse")?;
+    cmd.arg(&input)
+        .arg("--overwrite")
+        .arg("-o")
+        .arg(&out_dir)
+        .arg("--no-browser");
+    cmd.assert().success();
+
+    let index = fs::read_to_string(out_dir.join("index.html"))?;
+    assert!(index.contains(r#"href="collectives_parity.json""#));
+    let report_path = out_dir.join("collectives_parity.json");
+    assert!(
+        report_path.exists(),
+        "index.html links collectives_parity.json, so it should exist"
+    );
+    let report: CollectivesParityReport = serde_json::from_str(&fs::read_to_string(&report_path)?)?;
+    assert_eq!(report.graphs.len(), 2);
+    Ok(())
+}
+
+#[test]
 fn test_graph_execution_order_diagnostics() -> Result<(), Box<dyn std::error::Error>> {
     let input_dir = PathBuf::from("tests/graph_exec_order_tests");
     let temp_out = tempdir()?;

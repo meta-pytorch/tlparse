@@ -210,6 +210,8 @@ fn handle_one_rank(
 
     setup_output_directory(&out_dir, overwrite)?;
     let main_output_file = parse_and_write_output(cfg, &log_path, &out_dir)?;
+    // index.html always links collectives_parity.json, so write it next to it.
+    tlparse::parsers::write_collectives_parity(&out_dir)?;
 
     if open_browser {
         opener::open(&main_output_file)?;
